@@ -2,8 +2,8 @@ import { useState } from "react";
 import Sidebar from "./components/Sidebar";
 import ChatView from "./components/ChatView";
 import SourcesPanel from "./components/SourcesPanel";
-import StatusBar from "./components/StatusBar";
 import type { Doc, Message, Session } from "./types";
+import { ask } from "@tauri-apps/plugin-dialog";
 
 const newSession = (): Session => ({
   id: crypto.randomUUID(),
@@ -38,12 +38,35 @@ export default function App() {
         s.id !== active.id
           ? s
           : {
-              ...s,
-              title: s.messages.length === 0 ? text.slice(0, 32) : s.title,
-              messages: [...s.messages, userMsg, botMsg],
-            }
+            ...s,
+            title: s.messages.length === 0 ? text.slice(0, 32) : s.title,
+            messages: [...s.messages, userMsg, botMsg],
+          }
       )
     );
+  };
+
+  const deleteSession = async (id: string) => {
+    const target = sessions.find((s) => s.id === id);
+    if (!target) return;
+
+    if (target.messages.length > 0 || target.docs.length > 0) {
+      const ok = await ask(`Delete "${target.title}"?`, {
+        title: "Berzh AI",
+        kind: "warning",
+      });
+      if (!ok) return;
+    }
+
+    const remaining = sessions.filter((s) => s.id !== id);
+    if (remaining.length === 0) {
+      const fresh = newSession();
+      setSessions([fresh]);
+      setActiveId(fresh.id);
+      return;
+    }
+    setSessions(remaining);
+    if (id === activeId) setActiveId(remaining[0].id);
   };
 
   const addDocs = (docs: Doc[]) =>
@@ -52,12 +75,12 @@ export default function App() {
         s.id !== active.id
           ? s
           : {
-              ...s,
-              docs: [
-                ...s.docs,
-                ...docs.filter((d) => !s.docs.some((x) => x.path === d.path)),
-              ],
-            }
+            ...s,
+            docs: [
+              ...s.docs,
+              ...docs.filter((d) => !s.docs.some((x) => x.path === d.path)),
+            ],
+          }
       )
     );
 
@@ -69,24 +92,22 @@ export default function App() {
     );
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="flex flex-1 min-h-0">
-        <Sidebar
-          sessions={sessions}
-          activeId={active.id}
-          onSelect={setActiveId}
-          onNew={addSession}
-        />
-        <ChatView
-          session={active}
-          onSend={send}
-          onToggleSources={() => setSourcesOpen((o) => !o)}
-        />
-        {sourcesOpen && (
-          <SourcesPanel docs={active.docs} onAdd={addDocs} onRemove={removeDoc} />
-        )}
-      </div>
-      <StatusBar />
+    <div className="h-screen flex">
+      <Sidebar
+        sessions={sessions}
+        activeId={active.id}
+        onSelect={setActiveId}
+        onNew={addSession}
+        onDelete={deleteSession}
+      />
+      <ChatView
+        session={active}
+        onSend={send}
+        onToggleSources={() => setSourcesOpen((o) => !o)}
+      />
+      {sourcesOpen && (
+        <SourcesPanel docs={active.docs} onAdd={addDocs} onRemove={removeDoc} />
+      )}
     </div>
   );
 }

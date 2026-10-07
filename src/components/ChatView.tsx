@@ -23,13 +23,13 @@ export default function ChatView({ session, onSend, onToggleSources }: Props) {
   }, [session.messages.length]);
 
   return (
-    <section className="flex-1 min-w-0 flex flex-col">
-      <header className="h-12 px-5 flex items-center justify-between bg-panel border-b border-line">
+    <section className="flex-1 min-w-0 flex flex-col bg-white">
+      <header className="h-12 px-5 flex items-center justify-between border-b border-line">
         <span className="font-medium truncate">{session.title}</span>
         <button
           onClick={onToggleSources}
           title="Toggle sources"
-          className="p-1.5 border border-transparent hover:border-line hover:bg-bg"
+          className="p-2 rounded-lg hover:bg-bg"
         >
           <PanelRight size={18} />
         </button>
@@ -41,21 +41,34 @@ export default function ChatView({ session, onSend, onToggleSources }: Props) {
             Ask a question to start this session.
           </div>
         ) : (
-          session.messages.map((m) => (
-            <div key={m.id} className="border-b border-line px-6 py-4">
-              <div className="max-w-3xl mx-auto">
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted mb-1">
-                  {m.role === "user" ? "You" : "Berzh AI"}
+          <div className="max-w-4xl mx-auto py-4">
+            {session.messages.map((m) => {
+              const isUser = m.role === "user";
+              return (
+                <div
+                  key={m.id}
+                  className={`px-6 py-2 flex ${isUser ? "justify-end" : "justify-start"}`}
+                >
+                  <div className="max-w-[75%] flex flex-col">
+                    <div
+                      className={`px-4 py-2.5 rounded-2xl whitespace-pre-wrap leading-relaxed ${
+                        isUser
+                          ? "bg-accent text-white rounded-br-md"
+                          : "bg-bg text-ink rounded-bl-md"
+                      }`}
+                    >
+                      {m.text}
+                    </div>
+                    {!isUser && m.source && (
+                      <span className="mt-1.5 ml-1 self-start px-2 py-0.5 text-xs rounded-full border border-line text-muted">
+                        {sourceLabel[m.source]}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div className="whitespace-pre-wrap leading-relaxed">{m.text}</div>
-                {m.source && (
-                  <span className="inline-block mt-2 px-2 py-0.5 text-xs border border-line text-muted">
-                    {sourceLabel[m.source]}
-                  </span>
-                )}
-              </div>
-            </div>
-          ))
+              );
+            })}
+          </div>
         )}
         <div ref={endRef} />
       </div>
