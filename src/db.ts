@@ -1,5 +1,6 @@
 import Database from "@tauri-apps/plugin-sql";
 import type { Doc, Message, Session } from "./types";
+import { DEFAULT_SETTINGS, type Settings } from "./settings";
 
 export const newSession = (): Session => ({
   id: crypto.randomUUID(),
@@ -153,4 +154,31 @@ export async function insertDocs(sessionId: string, docs: Doc[]) {
 export async function deleteDoc(id: string) {
   const db = await getDb();
   await db.execute("DELETE FROM docs WHERE id = $1", [id]);
+}
+
+async function ensureSettingsTable(db: Database) {
+  await db.execute(
+    "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+  );
+}
+
+export async function loadSettings(): Promise<Settings> {
+  const db = await getDb();
+  await ensureSettingsTable(db);
+  const rows = await db.select<{ key: string; value: string }[]>(
+    "SELECT key, value FROM settings"
+  );
+  const stored = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return { ...DEFAULT_SETTINGS, ...stored } as Settings;
+}
+
+export async function saveSettings(s: Settings) {
+  const db = await getDb();
+  await ensureSettingsTable(db);
+  for (const [key, value] of Object.entries(s)) {
+    await db.execute(
+      "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      [key, String(value)]
+    );
+  }
 }

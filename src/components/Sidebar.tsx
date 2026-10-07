@@ -1,4 +1,4 @@
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Settings } from "lucide-react";
 import type { Session } from "../types";
 
 interface Props {
@@ -7,9 +7,10 @@ interface Props {
   onSelect: (id: string) => void;
   onNew: () => void;
   onDelete: (id: string) => void;
+  onOpenSettings: () => void;
 }
 
-export default function Sidebar({ sessions, activeId, onSelect, onNew, onDelete }: Props) {
+export default function Sidebar({ sessions, activeId, onSelect, onNew, onDelete, onOpenSettings }: Props) {
   return (
     <aside className="w-64 shrink-0 bg-panel border-r border-line flex flex-col">
       <div className="h-12 px-4 flex items-center border-b border-line font-semibold">
@@ -29,15 +30,13 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onDelete 
           return (
             <div
               key={s.id}
-              className={`group flex items-center rounded-lg ${
-                isActive ? "bg-accent-soft" : "hover:bg-bg"
-              }`}
+              className={`group flex items-center rounded-lg ${isActive ? "bg-accent-soft" : "hover:bg-bg"
+                }`}
             >
               <button
                 onClick={() => onSelect(s.id)}
-                className={`flex-1 min-w-0 text-left px-3 py-2 truncate ${
-                  isActive ? "text-accent font-medium" : ""
-                }`}
+                className={`flex-1 min-w-0 text-left px-3 py-2 truncate ${isActive ? "text-accent font-medium" : ""
+                  }`}
               >
                 {s.title}
               </button>
@@ -52,6 +51,14 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onDelete 
           );
         })}
       </nav>
+      <div className="p-2 border-t border-line">
+        <button
+          onClick={onOpenSettings}
+          className="w-full h-10 px-3 flex items-center gap-2 rounded-xl hover:bg-bg"
+        >
+          <Settings size={16} /> Settings
+        </button>
+      </div>
     </aside>
   );
 }

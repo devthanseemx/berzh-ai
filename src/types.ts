@@ -25,3 +25,12 @@ export interface Session {
   messages: Message[];
   docs: Doc[];
 }
+
+export interface Message {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  source?: Source;
+  error?: boolean;
+}
+

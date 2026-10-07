@@ -1,17 +1,19 @@
 import { useState } from "react";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 
 interface Props {
   onSend: (text: string) => void;
+  busy?: boolean;
+  onStop?: () => void;
   onTextChange?: (text: string) => void; // used later by the live engine
 }
 
-export default function Composer({ onSend, onTextChange }: Props) {
+export default function Composer({ onSend, busy, onStop, onTextChange }: Props) {
   const [text, setText] = useState("");
 
   const send = () => {
     const t = text.trim();
-    if (!t) return;
+    if (!t || busy) return;
     onSend(t);
     setText("");
     onTextChange?.("");
@@ -36,12 +38,22 @@ export default function Composer({ onSend, onTextChange }: Props) {
             }
           }}
         />
-        <button
-          onClick={send}
-          className="h-9 w-9 flex items-center justify-center rounded-full bg-accent text-white hover:opacity-90"
-        >
-          <ArrowUp size={18} />
-        </button>
+        {busy ? (
+          <button
+            onClick={onStop}
+            title="Stop"
+            className="h-9 w-9 flex items-center justify-center rounded-full bg-ink text-white hover:opacity-90"
+          >
+            <Square size={14} fill="currentColor" />
+          </button>
+        ) : (
+          <button
+            onClick={send}
+            className="h-9 w-9 flex items-center justify-center rounded-full bg-accent text-white hover:opacity-90"
+          >
+            <ArrowUp size={18} />
+          </button>
+        )}
       </div>
     </div>
   );

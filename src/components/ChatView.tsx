@@ -11,11 +11,12 @@ const sourceLabel = {
 
 interface Props {
   session: Session;
+  busy: boolean;
   onSend: (text: string) => void;
+  onStop: () => void;
   onToggleSources: () => void;
 }
-
-export default function ChatView({ session, onSend, onToggleSources }: Props) {
+export default function ChatView({ session, busy, onSend, onStop, onToggleSources }: Props) {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -51,13 +52,14 @@ export default function ChatView({ session, onSend, onToggleSources }: Props) {
                 >
                   <div className="max-w-[75%] flex flex-col">
                     <div
-                      className={`px-4 py-2.5 rounded-2xl whitespace-pre-wrap leading-relaxed ${
-                        isUser
+                      className={`px-4 py-2.5 rounded-2xl whitespace-pre-wrap leading-relaxed ${isUser
                           ? "bg-accent text-white rounded-br-md"
-                          : "bg-bg text-ink rounded-bl-md"
-                      }`}
+                          : m.error
+                            ? "bg-red-50 text-red-700 rounded-bl-md"
+                            : "bg-bg text-ink rounded-bl-md"
+                        }`}
                     >
-                      {m.text}
+                      {m.text || "Thinking..."}
                     </div>
                     {!isUser && m.source && (
                       <span className="mt-1.5 ml-1 self-start px-2 py-0.5 text-xs rounded-full border border-line text-muted">
@@ -73,7 +75,7 @@ export default function ChatView({ session, onSend, onToggleSources }: Props) {
         <div ref={endRef} />
       </div>
 
-      <Composer onSend={onSend} />
+      <Composer onSend={onSend} busy={busy} onStop={onStop} />
     </section>
   );
 }
