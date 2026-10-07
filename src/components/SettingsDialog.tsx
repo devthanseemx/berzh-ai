@@ -133,7 +133,7 @@ export default function SettingsDialog({ settings, onSave, onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="w-[480px] max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-line shadow-xl"
+        className="w-120 max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-line shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="h-12 px-5 flex items-center justify-between border-b border-line">
