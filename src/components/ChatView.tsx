@@ -1,22 +1,41 @@
 import { useEffect, useRef } from "react";
 import { PanelRight } from "lucide-react";
-import type { Session } from "../types";
+import type { Preview, Session } from "../types";
 import Composer from "./Composer";
+import LivePreview from "./LivePreview";
 
 const sourceLabel = {
   documents: "From documents",
   web: "From web",
-  general: "General knowledge",
 } as const;
 
 interface Props {
   session: Session;
   busy: boolean;
+  preview: Preview | null;
+  humanTone: boolean;
+  answerAsMe: boolean;
+  onToggleTone: () => void;
+  onToggleAsMe: () => void;
   onSend: (text: string) => void;
   onStop: () => void;
+  onTyping: (text: string) => void;
   onToggleSources: () => void;
 }
-export default function ChatView({ session, busy, onSend, onStop, onToggleSources }: Props) {
+
+export default function ChatView({
+  session,
+  busy,
+  preview,
+  humanTone,
+  answerAsMe,
+  onToggleTone,
+  onToggleAsMe,
+  onSend,
+  onStop,
+  onTyping,
+  onToggleSources,
+}: Props) {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -52,16 +71,17 @@ export default function ChatView({ session, busy, onSend, onStop, onToggleSource
                 >
                   <div className="max-w-[75%] flex flex-col">
                     <div
-                      className={`px-4 py-2.5 rounded-2xl whitespace-pre-wrap leading-relaxed ${isUser
+                      className={`px-4 py-2.5 rounded-2xl whitespace-pre-wrap leading-relaxed ${
+                        isUser
                           ? "bg-accent text-white rounded-br-md"
                           : m.error
-                            ? "bg-red-50 text-red-700 rounded-bl-md"
-                            : "bg-bg text-ink rounded-bl-md"
-                        }`}
+                          ? "bg-red-50 text-red-700 rounded-bl-md"
+                          : "bg-bg text-ink rounded-bl-md"
+                      }`}
                     >
                       {m.text || "Thinking..."}
                     </div>
-                    {!isUser && m.source && (
+                    {!isUser && m.source && m.source !== "general" && (
                       <span className="mt-1.5 ml-1 self-start px-2 py-0.5 text-xs rounded-full border border-line text-muted">
                         {sourceLabel[m.source]}
                       </span>
@@ -75,7 +95,21 @@ export default function ChatView({ session, busy, onSend, onStop, onToggleSource
         <div ref={endRef} />
       </div>
 
-      <Composer onSend={onSend} busy={busy} onStop={onStop} />
+      {preview && (
+        <div className="bg-white px-4 pt-2">
+          <LivePreview preview={preview} />
+        </div>
+      )}
+      <Composer
+        onSend={onSend}
+        busy={busy}
+        onStop={onStop}
+        onTextChange={onTyping}
+        humanTone={humanTone}
+        answerAsMe={answerAsMe}
+        onToggleTone={onToggleTone}
+        onToggleAsMe={onToggleAsMe}
+      />
     </section>
   );
 }

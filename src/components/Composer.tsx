@@ -1,14 +1,58 @@
 import { useState } from "react";
-import { ArrowUp, Square } from "lucide-react";
+import { ArrowUp, Smile, Square, User } from "lucide-react";
 
 interface Props {
   onSend: (text: string) => void;
   busy?: boolean;
   onStop?: () => void;
-  onTextChange?: (text: string) => void; // used later by the live engine
+  onTextChange?: (text: string) => void;
+  humanTone: boolean;
+  answerAsMe: boolean;
+  onToggleTone: () => void;
+  onToggleAsMe: () => void;
 }
 
-export default function Composer({ onSend, busy, onStop, onTextChange }: Props) {
+function Chip({
+  active,
+  label,
+  title,
+  icon,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  title: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-pressed={active}
+      onClick={onClick}
+      className={`h-7 px-3 flex items-center gap-1.5 rounded-full border text-xs ${
+        active
+          ? "border-accent bg-accent-soft text-accent font-medium"
+          : "border-line text-muted hover:bg-bg"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+export default function Composer({
+  onSend,
+  busy,
+  onStop,
+  onTextChange,
+  humanTone,
+  answerAsMe,
+  onToggleTone,
+  onToggleAsMe,
+}: Props) {
   const [text, setText] = useState("");
 
   const send = () => {
@@ -54,6 +98,23 @@ export default function Composer({ onSend, busy, onStop, onTextChange }: Props) 
             <ArrowUp size={18} />
           </button>
         )}
+      </div>
+
+      <div className="max-w-3xl mx-auto mt-2 flex items-center gap-2">
+        <Chip
+          active={humanTone}
+          label="Human tone"
+          title="Answer like a real person, not like an AI"
+          icon={<Smile size={14} />}
+          onClick={onToggleTone}
+        />
+        <Chip
+          active={answerAsMe}
+          label="Answer as me"
+          title="Reply in the first person, as you, using About me"
+          icon={<User size={14} />}
+          onClick={onToggleAsMe}
+        />
       </div>
     </div>
   );

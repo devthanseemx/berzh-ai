@@ -1,23 +1,27 @@
-export type ProviderId = "gemini" | "omniroute";
-
 export interface Settings {
-  provider: ProviderId;
-  geminiKey: string;
-  geminiModel: string;
-  geminiFallbackModel: string;
   omniBaseUrl: string;
   omniKey: string;
-  omniModel: string;
+  omniModel: string; // answer model (can be a reasoning model)
   omniFallbackModel: string;
+  liveDraft: boolean;
+  liveModel: string; // fast model for the live preview ("" = same as answer model)
+  liveFallbackModel: string;
+  humanTone: boolean; // answer like a real person
+  answerAsMe: boolean; // answer in the first person as the user
+  aboutMe: string;
+  instructions: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  provider: "gemini",
-  geminiKey: "",
-  geminiModel: "gemini-3.5-flash-lite",
-  geminiFallbackModel: "gemini-3.1-flash-lite",
   omniBaseUrl: "http://localhost:20128/v1",
   omniKey: "",
   omniModel: "",
   omniFallbackModel: "",
+  liveDraft: true,
+  liveModel: "",
+  liveFallbackModel: "",
+  humanTone: false,
+  answerAsMe: false,
+  aboutMe: "",
+  instructions: "",
 };

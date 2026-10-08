@@ -34,3 +34,20 @@ export interface Message {
   error?: boolean;
 }
 
+export interface Message {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  source?: Source;
+  error?: boolean;
+  ms?: number;
+  live?: boolean;
+}
+
+export interface Preview {
+  predicted: string;
+  answer: string;
+  done: boolean;
+  error: boolean;
+  stale: boolean; // user kept typing, so a newer draft is coming
+}

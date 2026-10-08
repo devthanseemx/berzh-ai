@@ -165,20 +165,38 @@ async function ensureSettingsTable(db: Database) {
 export async function loadSettings(): Promise<Settings> {
   const db = await getDb();
   await ensureSettingsTable(db);
+  // Gemini was removed: erase its stored key and leftovers
+  await db.execute("DELETE FROM settings WHERE key LIKE 'gemini%' OR key = 'provider'");
   const rows = await db.select<{ key: string; value: string }[]>(
     "SELECT key, value FROM settings"
   );
   const stored = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  return { ...DEFAULT_SETTINGS, ...stored } as Settings;
+  const merged = { ...DEFAULT_SETTINGS, ...stored } as Settings;
+  const bool = (v: unknown) => String(v) === "true";
+
+  // the old built-in "tell me about yourself" text is replaced by the "Answer as me" switch
+  const instructions = merged.instructions.startsWith(
+    'When I ask you to "tell me about yourself"'
+  )
+    ? ""
+    : merged.instructions;
+
+  return {
+    ...merged,
+    instructions,
+    liveDraft: bool(merged.liveDraft),
+    humanTone: bool(merged.humanTone),
+    answerAsMe: bool(merged.answerAsMe),
+  };
 }
 
 export async function saveSettings(s: Settings) {
   const db = await getDb();
   await ensureSettingsTable(db);
-  for (const [key, value] of Object.entries(s)) {
+  for (const key of Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[]) {
     await db.execute(
       "INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-      [key, String(value)]
+      [key, String(s[key])]
     );
   }
 }

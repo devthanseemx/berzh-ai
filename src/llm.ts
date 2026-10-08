@@ -2,12 +2,18 @@ import { fetch } from "@tauri-apps/plugin-http";
 import type { Message } from "./types";
 import type { Settings } from "./settings";
 
-const SYSTEM_PROMPT =
+const BASE_PROMPT =
   "You are Berzh AI, a helpful assistant inside a desktop app. Answer clearly and concisely. " +
   "If you are unsure, or the information may be out of date, say so instead of guessing.";
 
-const MAX_TURNS = 20;
-const FIRST_TOKEN_TIMEOUT_MS = 20_000;
+const ANSWER_TIMEOUT_MS = 60_000; // reasoning models may think for a while
+const LIVE_TIMEOUT_MS = 6_000;
+
+export interface ChatOptions {
+  live?: boolean;
+  maxTurns?: number;
+  system?: string;
+}
 
 export class ConfigError extends Error {}
 class FatalError extends Error {}
@@ -37,7 +43,32 @@ const sleep = (ms: number, signal: AbortSignal) =>
     );
   });
 
-function buildTurns(history: Message[]): Turn[] {
+const HUMAN_RULES =
+  "Write like a real person talking: natural, warm, plain everyday words, contractions, short sentences. " +
+  "No bullet lists, headings, bold text or emojis unless I ask for them. " +
+  'Do not open with filler such as "Certainly" or "Great question", do not mention being an AI, ' +
+  "and do not end with a summary or an offer to help further. Keep it brief and direct.";
+
+const AS_ME_RULES =
+  'Every message you receive is a question addressed to me, the user, and you reply AS me, in the first person (I, my, me), using the details in "About me". ' +
+  'Never address me as "you" and never describe me in the third person. ' +
+  'For example, if asked "Tell me about yourself", answer "I am Alex and I am a ..." and never "You are Alex ...". ' +
+  'Use only facts from "About me". If a detail is missing, do not invent it: keep that part general. ' +
+  'Do not mention being an AI. If "About me" is empty, tell me to fill it in under Settings.';
+
+function buildSystemPrompt(s: Settings): string {
+  const parts = [BASE_PROMPT];
+  parts.push(
+    `About me (the user you are chatting with):\n${s.aboutMe.trim() || "(empty)"}`
+  );
+  if (s.answerAsMe) parts.push(AS_ME_RULES);
+  if (s.humanTone) parts.push(HUMAN_RULES);
+  const ins = s.instructions.trim();
+  if (ins) parts.push(`My instructions:\n${ins}`);
+  return parts.join("\n\n");
+}
+
+function buildTurns(history: Message[], maxTurns: number): Turn[] {
   const turns: Turn[] = [];
   for (const m of history) {
     if (m.error || !m.text.trim()) continue;
@@ -45,7 +76,7 @@ function buildTurns(history: Message[]): Turn[] {
     if (last && last.role === m.role) last.text += "\n\n" + m.text;
     else turns.push({ role: m.role, text: m.text });
   }
-  const recent = turns.slice(-MAX_TURNS);
+  const recent = turns.slice(-maxTurns);
   while (recent.length > 0 && recent[0].role === "assistant") recent.shift();
   return recent;
 }
@@ -91,23 +122,23 @@ async function* sseData(res: Response): AsyncGenerator<string> {
   if (rest) yield rest;
 }
 
-function friendlyError(e: unknown, models: string[], label: string): Error {
+function friendlyError(e: unknown, models: string[]): Error {
   if (e instanceof HttpError && (e.status === 0 || e.status === 429 || e.status >= 500)) {
     const what = e.status === 0 ? "no response in time" : `HTTP ${e.status}`;
     return new Error(
-      `${label} is busy or not responding right now (${what}). Tried: ${models.join(", ")}. Please try again in a moment.`
+      `OmniRoute is busy or not responding right now (${what}). Tried: ${models.join(", ")}. Please try again in a moment.`
     );
   }
   return e instanceof Error ? e : new Error(String(e));
 }
 
-/** Try each model (main, then fallback), retrying once on temporary errors. */
+/** Try each model (main, then fallback), retrying on temporary errors. */
 async function withFallback(
   models: string[],
   run: (model: string, emit: (t: string) => void) => Promise<void>,
   onToken: (t: string) => void,
   signal: AbortSignal,
-  label: string
+  attempts: number
 ) {
   let started = false;
   const emit = (t: string) => {
@@ -117,7 +148,7 @@ async function withFallback(
   let lastErr: unknown = null;
 
   for (const model of models) {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < attempts; attempt++) {
       try {
         await run(model, emit);
         return;
@@ -128,107 +159,15 @@ async function withFallback(
         const status = e instanceof HttpError ? e.status : -1;
         if (status === 401 || status === 403) throw e;
         if (status === 400 || status === 404) break; // model problem: next model
-        if (attempt === 0) await sleep(1500, signal);
+        if (attempt < attempts - 1) await sleep(1500, signal);
       }
     }
   }
-  throw friendlyError(lastErr, models, label);
+  throw friendlyError(lastErr, models);
 }
 
 const uniqueModels = (...list: string[]) =>
   list.map((m) => m.trim()).filter((m, i, arr) => m && arr.indexOf(m) === i);
-
-/* ---------- Gemini ---------- */
-
-async function geminiOnce(
-  model: string,
-  key: string,
-  turns: Turn[],
-  emit: (t: string) => void,
-  signal: AbortSignal
-) {
-  if (signal.aborted) throw abortError();
-
-  const controller = new AbortController();
-  const onAbort = () => controller.abort();
-  signal.addEventListener("abort", onAbort);
-
-  let timedOut = false;
-  let gotFirst = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, FIRST_TOKEN_TIMEOUT_MS);
-
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/` +
-    `${encodeURIComponent(model)}:streamGenerateContent?alt=sse`;
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: turns.map((t) => ({
-          role: t.role === "user" ? "user" : "model",
-          parts: [{ text: t.text }],
-        })),
-      }),
-      signal: controller.signal,
-    });
-    await failIfBad(res);
-
-    for await (const data of sseData(res)) {
-      let json: any;
-      try {
-        json = JSON.parse(data);
-      } catch {
-        continue;
-      }
-      if (json.error) throw new Error(json.error.message ?? "Gemini error");
-      const parts = json.candidates?.[0]?.content?.parts ?? [];
-      for (const p of parts) {
-        if (typeof p.text === "string" && p.text && !p.thought) {
-          if (!gotFirst) {
-            gotFirst = true;
-            clearTimeout(timer);
-          }
-          emit(p.text);
-        }
-      }
-    }
-    if (!gotFirst) throw new Error("The model returned an empty reply.");
-  } catch (e) {
-    if (timedOut && !signal.aborted) throw new HttpError(0, "timed out");
-    throw e;
-  } finally {
-    clearTimeout(timer);
-    signal.removeEventListener("abort", onAbort);
-  }
-}
-
-async function streamGemini(
-  s: Settings,
-  turns: Turn[],
-  onToken: (t: string) => void,
-  signal: AbortSignal
-) {
-  const key = s.geminiKey.trim();
-  if (!key) throw new ConfigError("Add your Gemini API key in Settings.");
-  const models = uniqueModels(s.geminiModel, s.geminiFallbackModel);
-  if (models.length === 0) throw new ConfigError("Set the Gemini model in Settings.");
-
-  await withFallback(
-    models,
-    (model, emit) => geminiOnce(model, key, turns, emit, signal),
-    onToken,
-    signal,
-    "Gemini"
-  );
-}
-
-/* ---------- OmniRoute (OpenAI-compatible) ---------- */
 
 const omniBase = (s: { omniBaseUrl: string }) =>
   s.omniBaseUrl.trim().replace(/\/+$/, "");
@@ -262,9 +201,11 @@ export async function listOmniModels(baseUrl: string, apiKey: string): Promise<s
 async function omniOnce(
   s: Settings,
   model: string,
+  system: string,
   turns: Turn[],
   emit: (t: string) => void,
-  signal: AbortSignal
+  signal: AbortSignal,
+  timeoutMs: number
 ) {
   if (signal.aborted) throw abortError();
 
@@ -278,7 +219,7 @@ async function omniOnce(
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, FIRST_TOKEN_TIMEOUT_MS);
+  }, timeoutMs);
 
   try {
     let res: Response;
@@ -290,7 +231,7 @@ async function omniOnce(
           model,
           stream: true,
           messages: [
-            { role: "system", content: SYSTEM_PROMPT },
+            { role: "system", content: system },
             ...turns.map((t) => ({ role: t.role, content: t.text })),
           ],
         }),
@@ -333,36 +274,31 @@ async function omniOnce(
   }
 }
 
-async function streamOmniRoute(
-  s: Settings,
-  turns: Turn[],
-  onToken: (t: string) => void,
-  signal: AbortSignal
-) {
-  if (!omniBase(s)) throw new ConfigError("Set the OmniRoute base URL in Settings.");
-  const models = uniqueModels(s.omniModel, s.omniFallbackModel);
-  if (models.length === 0) throw new ConfigError("Choose an OmniRoute model in Settings.");
-
-  await withFallback(
-    models,
-    (model, emit) => omniOnce(s, model, turns, emit, signal),
-    onToken,
-    signal,
-    "OmniRoute"
-  );
-}
-
-/* ---------- Public ---------- */
-
 export async function streamChat(
   settings: Settings,
   history: Message[],
   onToken: (t: string) => void,
-  signal: AbortSignal
+  signal: AbortSignal,
+  opts: ChatOptions = {}
 ): Promise<void> {
-  const turns = buildTurns(history);
-  if (settings.provider === "gemini") {
-    return streamGemini(settings, turns, onToken, signal);
-  }
-  return streamOmniRoute(settings, turns, onToken, signal);
+  const live = !!opts.live;
+
+  if (!omniBase(settings)) throw new ConfigError("Set the OmniRoute base URL in Settings.");
+
+  const models = live
+    ? uniqueModels(settings.liveModel || settings.omniModel, settings.liveFallbackModel)
+    : uniqueModels(settings.omniModel, settings.omniFallbackModel);
+  if (models.length === 0) throw new ConfigError("Choose an OmniRoute model in Settings.");
+
+  const turns = buildTurns(history, opts.maxTurns ?? 20);
+  const system = opts.system ?? buildSystemPrompt(settings);
+  const timeoutMs = live ? LIVE_TIMEOUT_MS : ANSWER_TIMEOUT_MS;
+
+  await withFallback(
+    models,
+    (model, emit) => omniOnce(settings, model, system, turns, emit, signal, timeoutMs),
+    onToken,
+    signal,
+    live ? 1 : 2
+  );
 }

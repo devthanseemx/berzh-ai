@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { RefreshCw, X } from "lucide-react";
-import type { ProviderId, Settings } from "../settings";
+import type { Settings } from "../settings";
 import { listOmniModels } from "../llm";
 
 interface Props {
@@ -9,60 +9,43 @@ interface Props {
   onClose: () => void;
 }
 
-interface Opt {
-  id: string;
-  label: string;
-}
-
 const inputCls =
   "w-full h-10 px-3 border border-line rounded-xl outline-none focus:border-accent bg-white";
+const areaCls =
+  "w-full px-3 py-2 border border-line rounded-xl outline-none focus:border-accent bg-white resize-y leading-relaxed";
 
-const GEMINI_MODELS: Opt[] = [
-  { id: "gemini-3.5-flash-lite", label: "Gemini 3.5 Flash-Lite (fastest, recommended)" },
-  { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash-Lite" },
-  { id: "gemini-3.8-flash", label: "Gemini 3.8 Flash (smarter, slower)" },
-  { id: "gemini-3.7-flash", label: "Gemini 3.7 Flash" },
-];
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div>
-      <span className="block mb-1 text-xs font-semibold text-muted">{label}</span>
+    <div className="space-y-3 pt-4 border-t border-line first:border-t-0 first:pt-0">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted">
+        {title}
+      </h3>
       {children}
     </div>
   );
 }
 
-function ModelSelect({
-  value,
-  options,
-  onChange,
-  emptyLabel,
+function Field({
+  label,
+  action,
+  children,
 }: {
-  value: string;
-  options: Opt[];
-  onChange: (v: string) => void;
-  emptyLabel?: string;
+  label: string;
+  action?: ReactNode;
+  children: ReactNode;
 }) {
-  const known = options.some((o) => o.id === value);
   return (
-    <select
-      className={inputCls}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {emptyLabel && <option value="">{emptyLabel}</option>}
-      {!known && value && <option value={value}>{value}</option>}
-      {options.map((o) => (
-        <option key={o.id} value={o.id}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-xs font-semibold text-muted">{label}</span>
+        {action}
+      </div>
+      {children}
+    </div>
   );
 }
 
-function OmniPicker({
+function ModelPicker({
   value,
   models,
   onChange,
@@ -85,19 +68,27 @@ function OmniPicker({
       />
     );
   }
+  const known = models.includes(value);
   return (
-    <ModelSelect
+    <select
+      className={inputCls}
       value={value}
-      options={models.map((id) => ({ id, label: id }))}
-      onChange={onChange}
-      emptyLabel={emptyLabel}
-    />
+      onChange={(e) => onChange(e.target.value)}
+    >
+      {emptyLabel && <option value="">{emptyLabel}</option>}
+      {!known && value && <option value={value}>{value}</option>}
+      {models.map((id) => (
+        <option key={id} value={id}>
+          {id}
+        </option>
+      ))}
+    </select>
   );
 }
 
 export default function SettingsDialog({ settings, onSave, onClose }: Props) {
   const [draft, setDraft] = useState<Settings>(settings);
-  const [omniModels, setOmniModels] = useState<string[]>([]);
+  const [models, setModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelsError, setModelsError] = useState("");
 
@@ -108,9 +99,9 @@ export default function SettingsDialog({ settings, onSave, onClose }: Props) {
     setLoadingModels(true);
     setModelsError("");
     try {
-      setOmniModels(await listOmniModels(draft.omniBaseUrl, draft.omniKey));
+      setModels(await listOmniModels(draft.omniBaseUrl, draft.omniKey));
     } catch (e) {
-      setOmniModels([]);
+      setModels([]);
       setModelsError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoadingModels(false);
@@ -118,14 +109,9 @@ export default function SettingsDialog({ settings, onSave, onClose }: Props) {
   };
 
   useEffect(() => {
-    if (draft.provider === "omniroute") loadModels();
+    loadModels();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.provider]);
-
-  const providers: { id: ProviderId; label: string }[] = [
-    { id: "gemini", label: "Gemini" },
-    { id: "omniroute", label: "OmniRoute" },
-  ];
+  }, []);
 
   return (
     <div
@@ -133,118 +119,165 @@ export default function SettingsDialog({ settings, onSave, onClose }: Props) {
       onClick={onClose}
     >
       <div
-        className="w-120 max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-line shadow-xl"
+        className="w-130 max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-line shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="h-12 px-5 flex items-center justify-between border-b border-line">
+        <div className="h-12 px-5 flex items-center justify-between border-b border-line sticky top-0 bg-white">
           <span className="font-semibold">Settings</span>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg">
             <X size={18} />
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
-          <Field label="AI provider">
-            <div className="flex gap-2">
-              {providers.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => set("provider", p.id)}
-                  className={`flex-1 h-10 rounded-xl border ${
-                    draft.provider === p.id
-                      ? "border-accent bg-accent-soft text-accent font-medium"
-                      : "border-line hover:bg-bg"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </Field>
+        <div className="p-5 space-y-5">
+          <Section title="OmniRoute connection">
+            <Field label="Base URL">
+              <input
+                className={inputCls}
+                value={draft.omniBaseUrl}
+                onChange={(e) => set("omniBaseUrl", e.target.value)}
+              />
+            </Field>
+            <Field label="API key (optional)">
+              <input
+                type="password"
+                className={inputCls}
+                value={draft.omniKey}
+                onChange={(e) => set("omniKey", e.target.value)}
+              />
+            </Field>
+          </Section>
 
-          {draft.provider === "gemini" ? (
-            <>
-              <Field label="Gemini API key">
-                <input
-                  type="password"
-                  className={inputCls}
-                  value={draft.geminiKey}
-                  onChange={(e) => set("geminiKey", e.target.value)}
-                  placeholder="From Google AI Studio"
-                />
-              </Field>
-              <Field label="Model">
-                <ModelSelect
-                  value={draft.geminiModel}
-                  options={GEMINI_MODELS}
-                  onChange={(v) => set("geminiModel", v)}
-                />
-              </Field>
-              <Field label="Fallback model (used if the main one is busy)">
-                <ModelSelect
-                  value={draft.geminiFallbackModel}
-                  options={GEMINI_MODELS}
-                  onChange={(v) => set("geminiFallbackModel", v)}
-                  emptyLabel="None"
-                />
-              </Field>
-            </>
-          ) : (
-            <>
-              <Field label="Base URL">
-                <input
-                  className={inputCls}
-                  value={draft.omniBaseUrl}
-                  onChange={(e) => set("omniBaseUrl", e.target.value)}
-                />
-              </Field>
-              <Field label="API key (optional)">
-                <input
-                  type="password"
-                  className={inputCls}
-                  value={draft.omniKey}
-                  onChange={(e) => set("omniKey", e.target.value)}
-                />
-              </Field>
-              <Field label="Model">
-                <div className="flex gap-2">
-                  <div className="flex-1 min-w-0">
-                    <OmniPicker
-                      value={draft.omniModel}
-                      models={omniModels}
-                      onChange={(v) => set("omniModel", v)}
-                      placeholder="Model name from OmniRoute"
-                    />
-                  </div>
-                  <button
-                    onClick={loadModels}
-                    title="Load models from OmniRoute"
-                    className="h-10 w-10 shrink-0 flex items-center justify-center rounded-xl border border-line hover:bg-bg"
-                  >
-                    <RefreshCw
-                      size={16}
-                      className={loadingModels ? "animate-spin" : ""}
-                    />
-                  </button>
-                </div>
-                {modelsError && (
-                  <p className="mt-1 text-xs text-red-600">{modelsError}</p>
-                )}
-              </Field>
-              <Field label="Fallback model (used if the main one fails)">
-                <OmniPicker
-                  value={draft.omniFallbackModel}
-                  models={omniModels}
-                  onChange={(v) => set("omniFallbackModel", v)}
-                  emptyLabel="None"
-                  placeholder="Optional"
-                />
-              </Field>
-            </>
-          )}
+          <Section title="Answer model">
+            <Field
+              label="Model"
+              action={
+                <button
+                  onClick={loadModels}
+                  title="Reload models from OmniRoute"
+                  className="p-1 rounded-md text-muted hover:text-ink hover:bg-bg"
+                >
+                  <RefreshCw
+                    size={14}
+                    className={loadingModels ? "animate-spin" : ""}
+                  />
+                </button>
+              }
+            >
+              <ModelPicker
+                value={draft.omniModel}
+                models={models}
+                onChange={(v) => set("omniModel", v)}
+                placeholder="Model name from OmniRoute"
+              />
+              {modelsError && (
+                <p className="mt-1 text-xs text-red-600">{modelsError}</p>
+              )}
+            </Field>
+            <Field label="Fallback model (used if the main one fails)">
+              <ModelPicker
+                value={draft.omniFallbackModel}
+                models={models}
+                onChange={(v) => set("omniFallbackModel", v)}
+                emptyLabel="None"
+                placeholder="Optional"
+              />
+            </Field>
+          </Section>
+
+          <Section title="Live preview">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 accent-accent"
+                checked={draft.liveDraft}
+                onChange={(e) => set("liveDraft", e.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">Live drafting</span>
+                <span className="block text-xs text-muted">
+                  Prepare an answer in the background while you type.
+                </span>
+              </span>
+            </label>
+
+            {draft.liveDraft && (
+              <>
+                <Field label="Live preview model (pick the fastest, non-reasoning)">
+                  <ModelPicker
+                    value={draft.liveModel}
+                    models={models}
+                    onChange={(v) => set("liveModel", v)}
+                    emptyLabel="Same as answer model"
+                    placeholder="Empty = same as answer model"
+                  />
+                </Field>
+                <Field label="Live preview fallback model">
+                  <ModelPicker
+                    value={draft.liveFallbackModel}
+                    models={models}
+                    onChange={(v) => set("liveFallbackModel", v)}
+                    emptyLabel="None"
+                    placeholder="Optional"
+                  />
+                </Field>
+              </>
+            )}
+          </Section>
+
+          <Section title="Personalization">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 accent-accent"
+                checked={draft.humanTone}
+                onChange={(e) => set("humanTone", e.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">Humanized answers</span>
+                <span className="block text-xs text-muted">
+                  Reply like a real person: natural, plain words, no AI-style lists or filler.
+                </span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 accent-accent"
+                checked={draft.answerAsMe}
+                onChange={(e) => set("answerAsMe", e.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">Answer as me</span>
+                <span className="block text-xs text-muted">
+                  Reply in the first person as you, using "About me" (for example "I am ... and I am a ...").
+                </span>
+              </span>
+            </label>
+
+            <Field label="About me">
+              <textarea
+                rows={4}
+                className={areaCls}
+                value={draft.aboutMe}
+                onChange={(e) => set("aboutMe", e.target.value)}
+                placeholder="Your name, role, skills, projects, and anything the AI should know about you."
+              />
+            </Field>
+
+            <Field label="Extra instructions (optional)">
+              <textarea
+                rows={4}
+                className={areaCls}
+                value={draft.instructions}
+                onChange={(e) => set("instructions", e.target.value)}
+              />
+            </Field>
+          </Section>
 
           <p className="text-xs text-muted">
-            Keys are stored on this computer in the app database.
+            Settings are stored on this computer in the app database.
           </p>
         </div>
 
