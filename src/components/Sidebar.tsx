@@ -1,4 +1,4 @@
-import { Plus, Trash2, Settings } from "lucide-react";
+import { Plus, Settings, Trash2 } from "lucide-react";
 import type { Session } from "../types";
 
 interface Props {
@@ -10,7 +10,17 @@ interface Props {
   onOpenSettings: () => void;
 }
 
-export default function Sidebar({ sessions, activeId, onSelect, onNew, onDelete, onOpenSettings }: Props) {
+export default function Sidebar({
+  sessions,
+  activeId,
+  onSelect,
+  onNew,
+  onDelete,
+  onOpenSettings,
+}: Props) {
+  // empty chats are not part of the history
+  const visible = sessions.filter((s) => s.messages.length > 0 || s.docs.length > 0);
+
   return (
     <aside className="w-64 shrink-0 bg-panel border-r border-line flex flex-col">
       <div className="h-12 px-4 flex items-center border-b border-line font-semibold">
@@ -25,18 +35,23 @@ export default function Sidebar({ sessions, activeId, onSelect, onNew, onDelete,
         </button>
       </div>
       <nav className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
-        {sessions.map((s) => {
+        {visible.length === 0 && (
+          <p className="px-3 py-2 text-xs text-muted">Your chats will appear here.</p>
+        )}
+        {visible.map((s) => {
           const isActive = s.id === activeId;
           return (
             <div
               key={s.id}
-              className={`group flex items-center rounded-lg ${isActive ? "bg-accent-soft" : "hover:bg-bg"
-                }`}
+              className={`group flex items-center rounded-lg ${
+                isActive ? "bg-accent-soft" : "hover:bg-bg"
+              }`}
             >
               <button
                 onClick={() => onSelect(s.id)}
-                className={`flex-1 min-w-0 text-left px-3 py-2 truncate ${isActive ? "text-accent font-medium" : ""
-                  }`}
+                className={`flex-1 min-w-0 text-left px-3 py-2 truncate ${
+                  isActive ? "text-accent font-medium" : ""
+                }`}
               >
                 {s.title}
               </button>

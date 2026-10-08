@@ -14,8 +14,10 @@ import {
   DEBOUNCE_MS,
   type Draft,
 } from "./live";
+import { extractText, chunkText } from "./docs";
+import { searchDocs, invalidateIndex, type DocHit } from "./rag";
 import { DEFAULT_SETTINGS, type Settings } from "./settings";
-import type { Doc, Message, Preview, Session } from "./types";
+import type { Doc, Message, Preview, Session, Source } from "./types";
 
 const persist = (p: Promise<unknown>) =>
   p.catch((e) => console.error("DB error:", e));
@@ -30,6 +32,19 @@ const cleanTitle = (raw: string) =>
     .find((l) => l.length > 0)
     ?.replace(/^["'“”‘’`*#\s]+|["'“”‘’`*#.\s]+$/g, "")
     .slice(0, 40) ?? "";
+
+const isEmpty = (s: Session) => s.messages.length === 0 && s.docs.length === 0;
+
+/** For short follow-ups ("and the second one?"), include the previous question. */
+const retrievalQuery = (s: Session, text: string) => {
+  const prevUser = [...s.messages].reverse().find((m) => m.role === "user");
+  return prevUser && text.split(/\s+/).length < 5 ? `${prevUser.text} ${text}` : text;
+};
+
+const docHit = (s: Session, text: string): Promise<DocHit | null> =>
+  s.docs.length === 0
+    ? Promise.resolve(null)
+    : searchDocs(s.id, retrievalQuery(s, text)).catch(() => null);
 
 interface ConfirmState {
   title: string;
@@ -50,6 +65,7 @@ export default function App() {
 
   const controllers = useRef(new Map<string, AbortController>());
   const deleted = useRef(new Set<string>());
+  const persisted = useRef(new Set<string>()); // sessions already saved in the database
   const draftRef = useRef<Draft | null>(null);
   const typingTimer = useRef<number | undefined>(undefined);
   const lastTyped = useRef("");
@@ -65,14 +81,16 @@ export default function App() {
   useEffect(() => {
     db.initSessions()
       .then((loaded) => {
-        setSessions(loaded);
-        setActiveId(loaded[0].id);
+        loaded.forEach((s) => persisted.current.add(s.id));
+        const fresh = db.newSession();
+        setSessions([fresh, ...loaded]);
+        setActiveId(fresh.id);
       })
       .catch((e) => {
         console.error("Failed to load database:", e);
-        const s = db.newSession();
-        setSessions([s]);
-        setActiveId(s.id);
+        const fresh = db.newSession();
+        setSessions([fresh]);
+        setActiveId(fresh.id);
       })
       .finally(() => setReady(true));
 
@@ -99,6 +117,17 @@ export default function App() {
       messages: s.messages.filter((m) => m.id !== mid),
     }));
 
+  /** A chat is saved to the database only when something is added to it. */
+  const ensurePersisted = async (sessionId: string, title: string) => {
+    if (persisted.current.has(sessionId)) return;
+    persisted.current.add(sessionId);
+    try {
+      await db.insertSession({ id: sessionId, title });
+    } catch (e) {
+      console.error("DB error:", e);
+    }
+  };
+
   /* ---------- live drafting ---------- */
 
   const discardDraft = () => {
@@ -120,7 +149,7 @@ export default function App() {
     // the visible preview is now out of date until the next draft starts
     setPreview((p) => (p && !p.stale ? { ...p, stale: true } : p));
 
-    typingTimer.current = window.setTimeout(() => {
+    typingTimer.current = window.setTimeout(async () => {
       if (!settingsRef.current.liveDraft) return;
 
       const sid = activeIdRef.current;
@@ -133,18 +162,29 @@ export default function App() {
         return;
       }
 
+      const hit = await docHit(session, typed);
+      // the user kept typing or switched chats while we searched
+      if (lastTyped.current.trim() !== typed || activeIdRef.current !== sid) return;
+
       discardDraft();
 
-      const d: Draft = startDraft(settingsRef.current, session, typed, () => {
-        if (draftRef.current !== d) return; // an older draft: ignore
-        setPreview({
-          predicted: d.predicted,
-          answer: d.answer,
-          done: d.done,
-          error: !!d.error,
-          stale: false,
-        });
-      });
+      const d: Draft = startDraft(
+        settingsRef.current,
+        session,
+        typed,
+        () => {
+          if (draftRef.current !== d) return; // an older draft: ignore
+          setPreview({
+            predicted: d.predicted,
+            answer: d.answer,
+            done: d.done,
+            error: !!d.error,
+            stale: false,
+            docs: d.usedDocs,
+          });
+        },
+        hit
+      );
       draftRef.current = d;
       setPreview({
         predicted: "",
@@ -152,6 +192,7 @@ export default function App() {
         done: false,
         error: false,
         stale: false,
+        docs: d.usedDocs,
       });
     }, DEBOUNCE_MS);
   };
@@ -171,16 +212,23 @@ export default function App() {
 
   const addSession = () => {
     discardDraft();
+    // reuse the empty chat instead of piling up new ones
+    const existing = sessionsRef.current.find(isEmpty);
+    if (existing) {
+      setActiveId(existing.id);
+      return;
+    }
     const s = db.newSession();
     setSessions((prev) => [s, ...prev]);
     setActiveId(s.id);
-    persist(db.insertSession(s));
   };
 
   const removeSession = (id: string) => {
     discardDraft();
     deleted.current.add(id);
+    persisted.current.delete(id);
     controllers.current.get(id)?.abort(); // stop its reply if one is running
+    invalidateIndex(id);
     persist(db.deleteSession(id));
 
     const remaining = sessionsRef.current.filter((s) => s.id !== id);
@@ -188,7 +236,6 @@ export default function App() {
       const fresh = db.newSession();
       setSessions([fresh]);
       setActiveId(fresh.id);
-      persist(db.insertSession(fresh));
       return;
     }
     setSessions((prev) => prev.filter((s) => s.id !== id));
@@ -199,7 +246,7 @@ export default function App() {
     const target = sessionsRef.current.find((s) => s.id === id);
     if (!target) return;
 
-    if (target.messages.length === 0 && target.docs.length === 0) {
+    if (isEmpty(target)) {
       removeSession(id);
       return;
     }
@@ -276,11 +323,15 @@ export default function App() {
       title: tempTitle,
       messages: [...s.messages, userMsg, botMsg],
     }));
-    persist(db.insertMessages(sessionId, [userMsg]));
-    if (isFirst) {
+
+    // save the chat now that it has a conversation
+    if (!persisted.current.has(sessionId)) {
+      persist(ensurePersisted(sessionId, tempTitle));
+    } else if (isFirst) {
       persist(db.updateTitle(sessionId, tempTitle));
-      generateTitle(sessionId, text); // replaces the temporary title when ready
     }
+    persist(db.insertMessages(sessionId, [userMsg]));
+    if (isFirst) generateTitle(sessionId, text); // replaces the temporary title when ready
 
     const controller = new AbortController();
     controllers.current.set(sessionId, controller);
@@ -288,17 +339,27 @@ export default function App() {
 
     let reply = "";
     let failure: string | null = null;
+    let source: Source = "general";
 
     const show = (answer: string) => {
       reply = answer;
       patchMessage(sessionId, botId, { text: answer });
     };
 
-    const runNormal = () =>
-      streamChat(settings, history, (tok) => show(reply + tok), controller.signal);
+    const runNormal = async () => {
+      const session = sessionsRef.current.find((s) => s.id === sessionId) ?? active;
+      const hit = await docHit(session, text);
+      source = hit?.relevant ? "documents" : "general";
+      patchMessage(sessionId, botId, { source });
+      await streamChat(settings, history, (tok) => show(reply + tok), controller.signal, {
+        context: hit?.context,
+      });
+    };
 
     try {
       if (adopt) {
+        source = adopt.usedDocs ? "documents" : "general";
+        patchMessage(sessionId, botId, { source });
         await followDraft(adopt, show, controller.signal);
         if (!reply.trim() && !controller.signal.aborted) {
           await runNormal(); // draft failed: generate normally
@@ -319,7 +380,7 @@ export default function App() {
     if (deleted.current.has(sessionId)) return; // chat was deleted meanwhile
 
     if (reply.trim()) {
-      persist(db.insertMessages(sessionId, [{ ...botMsg, text: reply }]));
+      persist(db.insertMessages(sessionId, [{ ...botMsg, text: reply, source }]));
     } else if (failure) {
       patchMessage(sessionId, botId, {
         text: failure,
@@ -335,13 +396,36 @@ export default function App() {
     if (active) controllers.current.get(active.id)?.abort();
   };
 
-  /* ---------- documents & settings ---------- */
+  /* ---------- documents ---------- */
 
-  const addDocs = (docs: Doc[]) => {
-    const fresh = docs.filter((d) => !active.docs.some((x) => x.path === d.path));
-    if (fresh.length === 0) return;
-    patchSession(active.id, (s) => ({ ...s, docs: [...s.docs, ...fresh] }));
-    persist(db.insertDocs(active.id, fresh));
+  const uploadFiles = async (files: File[]): Promise<string | null> => {
+    const sessionId = active.id;
+    const errors: string[] = [];
+
+    for (const file of files) {
+      const key = `${file.name}:${file.size}`;
+      const current = sessionsRef.current.find((s) => s.id === sessionId);
+      if (current?.docs.some((d) => d.path === key)) continue; // already added
+
+      try {
+        const text = await extractText(file);
+        const chunks = chunkText(text);
+        if (chunks.length === 0) {
+          throw new Error("no readable text found (a scanned PDF?)");
+        }
+        const doc: Doc = { id: crypto.randomUUID(), name: file.name, path: key };
+
+        await ensurePersisted(sessionId, current?.title ?? "New chat");
+        await db.insertDoc(sessionId, doc, chunks);
+        invalidateIndex(sessionId);
+        patchSession(sessionId, (s) => ({ ...s, docs: [...s.docs, doc] }));
+      } catch (e) {
+        errors.push(`${file.name}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    refreshDraft(); // the preview may now use the new documents
+    return errors.length > 0 ? errors.join("\n") : null;
   };
 
   const removeDoc = (id: string) => {
@@ -349,8 +433,12 @@ export default function App() {
       ...s,
       docs: s.docs.filter((d) => d.id !== id),
     }));
+    invalidateIndex(active.id);
     persist(db.deleteDoc(id));
+    refreshDraft();
   };
+
+  /* ---------- settings ---------- */
 
   const saveSettings = (s: Settings) => {
     setSettings(s);
@@ -394,7 +482,7 @@ export default function App() {
         onToggleSources={() => setSourcesOpen((o) => !o)}
       />
       {sourcesOpen && (
-        <SourcesPanel docs={active.docs} onAdd={addDocs} onRemove={removeDoc} />
+        <SourcesPanel docs={active.docs} onUpload={uploadFiles} onRemove={removeDoc} />
       )}
       {settingsOpen && (
         <SettingsDialog

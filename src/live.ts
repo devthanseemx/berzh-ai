@@ -1,4 +1,5 @@
 import { streamChat } from "./llm";
+import type { DocHit } from "./rag";
 import type { Settings } from "./settings";
 import type { Message, Session } from "./types";
 
@@ -12,6 +13,7 @@ export interface Draft {
   answer: string;
   done: boolean;
   error: string | null;
+  usedDocs: boolean;
   controller: AbortController;
   listener: (() => void) | null;
 }
@@ -25,7 +27,8 @@ export function startDraft(
   settings: Settings,
   session: Session,
   typed: string,
-  onChange?: () => void
+  onChange?: () => void,
+  hit?: DocHit | null
 ): Draft {
   const draft: Draft = {
     sessionId: session.id,
@@ -34,11 +37,12 @@ export function startDraft(
     answer: "",
     done: false,
     error: null,
+    usedDocs: !!hit?.relevant,
     controller: new AbortController(),
     listener: null,
   };
 
-    const history: Message[] = [
+  const history: Message[] = [
     ...session.messages.slice(-4),
     { id: "draft", role: "user", text: instruction(typed) },
   ];
@@ -77,7 +81,7 @@ export function startDraft(
       notify();
     },
     draft.controller.signal,
-    { live: true, maxTurns: 4 }
+    { live: true, maxTurns: 4, context: hit?.context }
   )
     .then(() => {
       parse(true);

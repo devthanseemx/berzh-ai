@@ -13,6 +13,7 @@ export interface ChatOptions {
   live?: boolean;
   maxTurns?: number;
   system?: string;
+  context?: string; // excerpts from the user's documents
 }
 
 export class ConfigError extends Error {}
@@ -56,11 +57,18 @@ const AS_ME_RULES =
   'Use only facts from "About me". If a detail is missing, do not invent it: keep that part general. ' +
   'Do not mention being an AI. If "About me" is empty, tell me to fill it in under Settings.';
 
-function buildSystemPrompt(s: Settings): string {
+function buildSystemPrompt(s: Settings, context?: string): string {
   const parts = [BASE_PROMPT];
   parts.push(
     `About me (the user you are chatting with):\n${s.aboutMe.trim() || "(empty)"}`
   );
+  if (context) {
+    parts.push(
+      "Reference documents I uploaded (excerpts). If they contain the answer, use them and do not contradict them. " +
+        "If they do not cover the question, answer from your general knowledge as usual and do not mention the documents.\n\n" +
+        context
+    );
+  }
   if (s.answerAsMe) parts.push(AS_ME_RULES);
   if (s.humanTone) parts.push(HUMAN_RULES);
   const ins = s.instructions.trim();
@@ -291,7 +299,7 @@ export async function streamChat(
   if (models.length === 0) throw new ConfigError("Choose an OmniRoute model in Settings.");
 
   const turns = buildTurns(history, opts.maxTurns ?? 20);
-  const system = opts.system ?? buildSystemPrompt(settings);
+  const system = opts.system ?? buildSystemPrompt(settings, opts.context);
   const timeoutMs = live ? LIVE_TIMEOUT_MS : ANSWER_TIMEOUT_MS;
 
   await withFallback(

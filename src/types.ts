@@ -49,5 +49,6 @@ export interface Preview {
   answer: string;
   done: boolean;
   error: boolean;
-  stale: boolean; // user kept typing, so a newer draft is coming
+  stale: boolean;
+  docs: boolean; // the draft is using uploaded documents
 }

@@ -1,6 +1,6 @@
 import Database from "@tauri-apps/plugin-sql";
-import type { Doc, Message, Session } from "./types";
 import { DEFAULT_SETTINGS, type Settings } from "./settings";
+import type { Doc, Message, Session } from "./types";
 
 export const newSession = (): Session => ({
   id: crypto.randomUUID(),
@@ -42,10 +42,25 @@ function getDb(): Promise<Database> {
         )`
       );
       await db.execute(
+        `CREATE TABLE IF NOT EXISTS chunks (
+          id TEXT PRIMARY KEY,
+          doc_id TEXT NOT NULL,
+          session_id TEXT NOT NULL,
+          idx INTEGER NOT NULL,
+          text TEXT NOT NULL
+        )`
+      );
+      await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)"
       );
       await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_docs_session ON docs(session_id)"
+      );
+      await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chunks_session ON chunks(session_id)"
+      );
+      await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(doc_id)"
       );
       return db;
     })();
@@ -92,26 +107,30 @@ async function loadSessions(): Promise<Session[]> {
   }));
 }
 
-// Shared promise: React StrictMode runs effects twice in dev,
-// this makes sure the first session is only created once.
+// Shared promise: React StrictMode runs effects twice in dev.
 let initPromise: Promise<Session[]> | null = null;
 
 export function initSessions(): Promise<Session[]> {
   if (!initPromise) {
     initPromise = (async () => {
-      let sessions = await loadSessions();
-      if (sessions.length === 0) {
-        const s = newSession();
-        await insertSession(s);
-        sessions = [s];
-      }
-      return sessions;
+      const db = await getDb();
+      // Files from the old version have no searchable text: drop them
+      await db.execute(
+        "DELETE FROM docs WHERE id NOT IN (SELECT doc_id FROM chunks)"
+      );
+      // Empty chats are never kept in history
+      await db.execute(
+        `DELETE FROM sessions
+         WHERE id NOT IN (SELECT session_id FROM messages)
+           AND id NOT IN (SELECT session_id FROM docs)`
+      );
+      return loadSessions();
     })();
   }
   return initPromise;
 }
 
-export async function insertSession(s: Session) {
+export async function insertSession(s: Pick<Session, "id" | "title">) {
   const db = await getDb();
   await db.execute(
     "INSERT INTO sessions (id, title, created_at) VALUES ($1, $2, $3)",
@@ -126,6 +145,7 @@ export async function updateTitle(id: string, title: string) {
 
 export async function deleteSession(id: string) {
   const db = await getDb();
+  await db.execute("DELETE FROM chunks WHERE session_id = $1", [id]);
   await db.execute("DELETE FROM messages WHERE session_id = $1", [id]);
   await db.execute("DELETE FROM docs WHERE session_id = $1", [id]);
   await db.execute("DELETE FROM sessions WHERE id = $1", [id]);
@@ -141,20 +161,60 @@ export async function insertMessages(sessionId: string, msgs: Message[]) {
   }
 }
 
-export async function insertDocs(sessionId: string, docs: Doc[]) {
+export async function deleteDoc(id: string) {
   const db = await getDb();
-  for (const d of docs) {
-    await db.execute(
-      "INSERT INTO docs (id, session_id, name, path, created_at) VALUES ($1, $2, $3, $4, $5)",
-      [d.id, sessionId, d.name, d.path, Date.now()]
-    );
+  await db.execute("DELETE FROM chunks WHERE doc_id = $1", [id]);
+  await db.execute("DELETE FROM docs WHERE id = $1", [id]);
+}
+
+/** Save a document and its text chunks. Removes everything again if something fails. */
+export async function insertDoc(sessionId: string, doc: Doc, chunks: string[]) {
+  const db = await getDb();
+  await db.execute(
+    "INSERT INTO docs (id, session_id, name, path, created_at) VALUES ($1, $2, $3, $4, $5)",
+    [doc.id, sessionId, doc.name, doc.path, Date.now()]
+  );
+  try {
+    const BATCH = 40;
+    for (let i = 0; i < chunks.length; i += BATCH) {
+      const part = chunks.slice(i, i + BATCH);
+      const values: string[] = [];
+      const params: (string | number)[] = [];
+      part.forEach((text, j) => {
+        const n = j * 5;
+        values.push(`($${n + 1}, $${n + 2}, $${n + 3}, $${n + 4}, $${n + 5})`);
+        params.push(crypto.randomUUID(), doc.id, sessionId, i + j, text);
+      });
+      await db.execute(
+        `INSERT INTO chunks (id, doc_id, session_id, idx, text) VALUES ${values.join(", ")}`,
+        params
+      );
+    }
+  } catch (e) {
+    await deleteDoc(doc.id);
+    throw e;
   }
 }
 
-export async function deleteDoc(id: string) {
-  const db = await getDb();
-  await db.execute("DELETE FROM docs WHERE id = $1", [id]);
+export interface ChunkRow {
+  id: string;
+  doc_id: string;
+  doc_name: string;
+  text: string;
 }
+
+export async function loadChunks(sessionId: string): Promise<ChunkRow[]> {
+  const db = await getDb();
+  return db.select<ChunkRow[]>(
+    `SELECT c.id AS id, c.doc_id AS doc_id, d.name AS doc_name, c.text AS text
+     FROM chunks c JOIN docs d ON d.id = c.doc_id
+     WHERE c.session_id = $1
+     ORDER BY d.created_at, c.idx`,
+    [sessionId]
+  );
+}
+
+/* ---------- settings ---------- */
 
 async function ensureSettingsTable(db: Database) {
   await db.execute(
