@@ -6,8 +6,10 @@ export interface Settings {
   liveDraft: boolean;
   liveModel: string; // fast model for the live preview ("" = same as answer model)
   liveFallbackModel: string;
-  humanTone: boolean; // answer like a real person
-  answerAsMe: boolean; // answer in the first person as the user
+  humanTone: boolean;
+  answerAsMe: boolean;
+  webSearch: boolean;
+  tavilyKey: string;
   aboutMe: string;
   instructions: string;
 }
@@ -22,6 +24,8 @@ export const DEFAULT_SETTINGS: Settings = {
   liveFallbackModel: "",
   humanTone: false,
   answerAsMe: false,
+  webSearch: true,
+  tavilyKey: "",
   aboutMe: "",
   instructions: "",
 };

@@ -1,6 +1,6 @@
 import Database from "@tauri-apps/plugin-sql";
 import { DEFAULT_SETTINGS, type Settings } from "./settings";
-import type { Doc, Message, Session } from "./types";
+import type { Doc, Message, Ref, Session } from "./types";
 
 export const newSession = (): Session => ({
   id: crypto.randomUUID(),
@@ -62,6 +62,11 @@ function getDb(): Promise<Database> {
       await db.execute(
         "CREATE INDEX IF NOT EXISTS idx_chunks_doc ON chunks(doc_id)"
       );
+      try {
+        await db.execute("ALTER TABLE messages ADD COLUMN refs TEXT");
+      } catch {
+        /* column already exists */
+      }
       return db;
     })();
   }
@@ -75,8 +80,20 @@ type MessageRow = {
   role: "user" | "assistant";
   text: string;
   source: Message["source"] | null;
+  refs: string | null;
 };
+
 type DocRow = { id: string; session_id: string; name: string; path: string };
+
+const parseRefs = (raw: string | null): Ref[] | undefined => {
+  if (!raw) return undefined;
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? (v as Ref[]) : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 async function loadSessions(): Promise<Session[]> {
   const db = await getDb();
@@ -84,7 +101,7 @@ async function loadSessions(): Promise<Session[]> {
     "SELECT id, title FROM sessions ORDER BY created_at DESC"
   );
   const messages = await db.select<MessageRow[]>(
-    "SELECT id, session_id, role, text, source FROM messages ORDER BY created_at, rowid"
+    "SELECT id, session_id, role, text, source, refs FROM messages ORDER BY created_at, rowid"
   );
   const docs = await db.select<DocRow[]>(
     "SELECT id, session_id, name, path FROM docs ORDER BY created_at, rowid"
@@ -100,6 +117,7 @@ async function loadSessions(): Promise<Session[]> {
         role: m.role,
         text: m.text,
         source: m.source ?? undefined,
+        refs: parseRefs(m.refs),
       })),
     docs: docs
       .filter((d) => d.session_id === s.id)
@@ -155,8 +173,16 @@ export async function insertMessages(sessionId: string, msgs: Message[]) {
   const db = await getDb();
   for (const m of msgs) {
     await db.execute(
-      "INSERT INTO messages (id, session_id, role, text, source, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
-      [m.id, sessionId, m.role, m.text, m.source ?? null, Date.now()]
+      "INSERT INTO messages (id, session_id, role, text, source, refs, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+      [
+        m.id,
+        sessionId,
+        m.role,
+        m.text,
+        m.source ?? null,
+        m.refs && m.refs.length > 0 ? JSON.stringify(m.refs) : null,
+        Date.now(),
+      ]
     );
   }
 }

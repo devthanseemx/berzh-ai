@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowUp, Smile, Square, User } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { ArrowUp, Globe, Smile, Square, User } from "lucide-react";
 
 interface Props {
   onSend: (text: string) => void;
@@ -8,8 +8,10 @@ interface Props {
   onTextChange?: (text: string) => void;
   humanTone: boolean;
   answerAsMe: boolean;
+  webSearch: boolean;
   onToggleTone: () => void;
   onToggleAsMe: () => void;
+  onToggleWeb: () => void;
 }
 
 function Chip({
@@ -22,7 +24,7 @@ function Chip({
   active: boolean;
   label: string;
   title: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   onClick: () => void;
 }) {
   return (
@@ -50,8 +52,10 @@ export default function Composer({
   onTextChange,
   humanTone,
   answerAsMe,
+  webSearch,
   onToggleTone,
   onToggleAsMe,
+  onToggleWeb,
 }: Props) {
   const [text, setText] = useState("");
 
@@ -114,6 +118,13 @@ export default function Composer({
           title="Reply in the first person, as you, using About me"
           icon={<User size={14} />}
           onClick={onToggleAsMe}
+        />
+        <Chip
+          active={webSearch}
+          label="Web search"
+          title="Search the web for current questions (needs a Tavily key in Settings)"
+          icon={<Globe size={14} />}
+          onClick={onToggleWeb}
         />
       </div>
     </div>

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { PanelRight } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Preview, Session } from "../types";
 import Composer from "./Composer";
 import LivePreview from "./LivePreview";
@@ -9,14 +10,24 @@ const sourceLabel = {
   web: "From web",
 } as const;
 
+const host = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+};
+
 interface Props {
   session: Session;
   busy: boolean;
   preview: Preview | null;
   humanTone: boolean;
   answerAsMe: boolean;
+  webSearch: boolean;
   onToggleTone: () => void;
   onToggleAsMe: () => void;
+  onToggleWeb: () => void;
   onSend: (text: string) => void;
   onStop: () => void;
   onTyping: (text: string) => void;
@@ -29,8 +40,10 @@ export default function ChatView({
   preview,
   humanTone,
   answerAsMe,
+  webSearch,
   onToggleTone,
   onToggleAsMe,
+  onToggleWeb,
   onSend,
   onStop,
   onTyping,
@@ -79,12 +92,24 @@ export default function ChatView({
                           : "bg-bg text-ink rounded-bl-md"
                       }`}
                     >
-                      {m.text || "Thinking..."}
+                      {m.text || m.status || "Thinking..."}
                     </div>
                     {!isUser && m.source && m.source !== "general" && (
-                      <span className="mt-1.5 ml-1 self-start px-2 py-0.5 text-xs rounded-full border border-line text-muted">
-                        {sourceLabel[m.source]}
-                      </span>
+                      <div className="mt-1.5 ml-1 flex flex-wrap items-center gap-1.5">
+                        <span className="px-2 py-0.5 text-xs rounded-full border border-line text-muted">
+                          {sourceLabel[m.source]}
+                        </span>
+                        {m.refs?.map((r) => (
+                          <button
+                            key={r.url}
+                            title={r.title}
+                            onClick={() => openUrl(r.url).catch(console.error)}
+                            className="px-2 py-0.5 max-w-45 truncate text-xs rounded-full bg-accent-soft text-accent hover:underline"
+                          >
+                            {host(r.url)}
+                          </button>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -107,8 +132,10 @@ export default function ChatView({
         onTextChange={onTyping}
         humanTone={humanTone}
         answerAsMe={answerAsMe}
+        webSearch={webSearch}
         onToggleTone={onToggleTone}
         onToggleAsMe={onToggleAsMe}
+        onToggleWeb={onToggleWeb}
       />
     </section>
   );

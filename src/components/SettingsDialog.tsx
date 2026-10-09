@@ -225,6 +225,36 @@ export default function SettingsDialog({ settings, onSave, onClose }: Props) {
             )}
           </Section>
 
+          <Section title="Web search">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 accent-accent"
+                checked={draft.webSearch}
+                onChange={(e) => set("webSearch", e.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">Search the web for current questions</span>
+                <span className="block text-xs text-muted">
+                  Used for prices, news, weather and "search for ...". Your documents are
+                  checked first.
+                </span>
+              </span>
+            </label>
+            <Field label="Tavily API key">
+              <input
+                type="password"
+                className={inputCls}
+                value={draft.tavilyKey}
+                onChange={(e) => set("tavilyKey", e.target.value)}
+                placeholder="tvly-..."
+              />
+              <p className="mt-1 text-xs text-muted">
+                Free key at tavily.com (about 1,000 searches a month, no card).
+              </p>
+            </Field>
+          </Section>
+
           <Section title="Personalization">
             <label className="flex items-start gap-3 cursor-pointer">
               <input

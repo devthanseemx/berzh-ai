@@ -16,8 +16,10 @@ import {
 } from "./live";
 import { extractText, chunkText } from "./docs";
 import { searchDocs, invalidateIndex, type DocHit } from "./rag";
+import { searchWeb, type WebHit } from "./web";
+import { decideRoute } from "./router";
 import { DEFAULT_SETTINGS, type Settings } from "./settings";
-import type { Doc, Message, Preview, Session, Source } from "./types";
+import type { Doc, Message, Preview, Ref, Session, Source } from "./types";
 
 const persist = (p: Promise<unknown>) =>
   p.catch((e) => console.error("DB error:", e));
@@ -34,6 +36,8 @@ const cleanTitle = (raw: string) =>
     .slice(0, 40) ?? "";
 
 const isEmpty = (s: Session) => s.messages.length === 0 && s.docs.length === 0;
+
+const webAvailable = (s: Settings) => s.webSearch && s.tavilyKey.trim().length > 0;
 
 /** For short follow-ups ("and the second one?"), include the previous question. */
 const retrievalQuery = (s: Session, text: string) => {
@@ -166,10 +170,26 @@ export default function App() {
       // the user kept typing or switched chats while we searched
       if (lastTyped.current.trim() !== typed || activeIdRef.current !== sid) return;
 
+      // questions that need the web are searched on Enter, never while typing
+      const cfg = settingsRef.current;
+      if (decideRoute(typed, hit, webAvailable(cfg), cfg.answerAsMe) === "web") {
+        discardDraft();
+        setPreview({
+          predicted: "",
+          answer: "",
+          done: true,
+          error: false,
+          stale: false,
+          docs: false,
+          web: true,
+        });
+        return;
+      }
+
       discardDraft();
 
       const d: Draft = startDraft(
-        settingsRef.current,
+        cfg,
         session,
         typed,
         () => {
@@ -181,6 +201,7 @@ export default function App() {
             error: !!d.error,
             stale: false,
             docs: d.usedDocs,
+            web: false,
           });
         },
         hit
@@ -193,6 +214,7 @@ export default function App() {
         error: false,
         stale: false,
         docs: d.usedDocs,
+        web: false,
       });
     }, DEBOUNCE_MS);
   };
@@ -299,12 +321,12 @@ export default function App() {
     lastTyped.current = "";
     const sessionId = active.id;
 
-    // Use the background draft if it answers what was actually sent
+    // A background draft can be reused if it answers what was actually sent
     const draft = draftRef.current;
     draftRef.current = null;
     setPreview(null);
-    const adopt = draft && draftMatches(draft, sessionId, text) ? draft : null;
-    if (draft && !adopt) draft.controller.abort();
+    const adoptable = draft && draftMatches(draft, sessionId, text) ? draft : null;
+    if (draft && !adoptable) draft.controller.abort();
 
     const userMsg: Message = { id: crypto.randomUUID(), role: "user", text };
     const botId = crypto.randomUUID();
@@ -340,32 +362,61 @@ export default function App() {
     let reply = "";
     let failure: string | null = null;
     let source: Source = "general";
+    let refs: Ref[] | undefined;
 
     const show = (answer: string) => {
       reply = answer;
       patchMessage(sessionId, botId, { text: answer });
     };
 
-    const runNormal = async () => {
-      const session = sessionsRef.current.find((s) => s.id === sessionId) ?? active;
-      const hit = await docHit(session, text);
-      source = hit?.relevant ? "documents" : "general";
-      patchMessage(sessionId, botId, { source });
-      await streamChat(settings, history, (tok) => show(reply + tok), controller.signal, {
-        context: hit?.context,
-      });
-    };
+    const stream = (opts: {
+      context?: string;
+      web?: string;
+      webFailed?: boolean;
+    }) => streamChat(settings, history, (tok) => show(reply + tok), controller.signal, opts);
 
     try {
-      if (adopt) {
-        source = adopt.usedDocs ? "documents" : "general";
+      const session = sessionsRef.current.find((s) => s.id === sessionId) ?? active;
+      const hit = await docHit(session, text);
+      const route = decideRoute(text, hit, webAvailable(settings), settings.answerAsMe);
+
+      if (route === "web") {
+        adoptable?.controller.abort(); // a draft without web results would be out of date
+        patchMessage(sessionId, botId, { status: "Searching the web..." });
+
+        let web: WebHit | null = null;
+        let webFailed = false;
+        try {
+          web = await searchWeb(
+            settings.tavilyKey,
+            retrievalQuery(session, text),
+            controller.signal
+          );
+          if (!web) webFailed = true;
+        } catch (e) {
+          if (controller.signal.aborted || e instanceof ConfigError) throw e;
+          webFailed = true;
+        }
+
+        if (web) {
+          source = "web";
+          refs = web.refs;
+        }
+        patchMessage(sessionId, botId, { status: undefined, source, refs });
+        await stream({ context: hit?.context, web: web?.context, webFailed });
+      } else if (adoptable) {
+        source = adoptable.usedDocs ? "documents" : "general";
         patchMessage(sessionId, botId, { source });
-        await followDraft(adopt, show, controller.signal);
+        await followDraft(adoptable, show, controller.signal);
         if (!reply.trim() && !controller.signal.aborted) {
-          await runNormal(); // draft failed: generate normally
+          source = hit?.relevant ? "documents" : "general"; // draft failed: generate normally
+          patchMessage(sessionId, botId, { source });
+          await stream({ context: hit?.context });
         }
       } else {
-        await runNormal();
+        source = hit?.relevant ? "documents" : "general";
+        patchMessage(sessionId, botId, { source });
+        await stream({ context: hit?.context });
       }
     } catch (e) {
       if (!controller.signal.aborted) {
@@ -380,12 +431,14 @@ export default function App() {
     if (deleted.current.has(sessionId)) return; // chat was deleted meanwhile
 
     if (reply.trim()) {
-      persist(db.insertMessages(sessionId, [{ ...botMsg, text: reply, source }]));
+      persist(db.insertMessages(sessionId, [{ ...botMsg, text: reply, source, refs }]));
     } else if (failure) {
       patchMessage(sessionId, botId, {
         text: failure,
         error: true,
         source: undefined,
+        refs: undefined,
+        status: undefined,
       });
     } else {
       removeMessage(sessionId, botId); // stopped before any text arrived
@@ -446,7 +499,7 @@ export default function App() {
     refreshDraft(); // the preview may have been written in the old style
   };
 
-  const toggleSetting = (key: "humanTone" | "answerAsMe") => {
+  const toggleSetting = (key: "humanTone" | "answerAsMe" | "webSearch") => {
     const next = {
       ...settingsRef.current,
       [key]: !settingsRef.current[key],
@@ -474,8 +527,10 @@ export default function App() {
         preview={preview}
         humanTone={settings.humanTone}
         answerAsMe={settings.answerAsMe}
+        webSearch={settings.webSearch}
         onToggleTone={() => toggleSetting("humanTone")}
         onToggleAsMe={() => toggleSetting("answerAsMe")}
+        onToggleWeb={() => toggleSetting("webSearch")}
         onSend={send}
         onStop={stop}
         onTyping={onTyping}

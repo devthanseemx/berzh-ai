@@ -1,18 +1,5 @@
 export type Source = "documents" | "web" | "general";
 
-export interface Message {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  source?: Source;
-}
-
-export interface Session {
-  id: string;
-  title: string;
-  messages: Message[];
-}
-
 export interface Doc {
   id: string;
   name: string;
@@ -26,12 +13,10 @@ export interface Session {
   docs: Doc[];
 }
 
-export interface Message {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  source?: Source;
-  error?: boolean;
+
+export interface Ref {
+  title: string;
+  url: string;
 }
 
 export interface Message {
@@ -42,6 +27,8 @@ export interface Message {
   error?: boolean;
   ms?: number;
   live?: boolean;
+  status?: string; // e.g. "Searching the web..."
+  refs?: Ref[]; // web sources used
 }
 
 export interface Preview {
@@ -51,4 +38,5 @@ export interface Preview {
   error: boolean;
   stale: boolean;
   docs: boolean; // the draft is using uploaded documents
+  web: boolean; // this question needs a web search (done on Enter)
 }
