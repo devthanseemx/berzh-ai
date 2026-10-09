@@ -12,6 +12,8 @@ export interface Settings {
   tavilyKey: string;
   aboutMe: string;
   instructions: string;
+  deepgramKey: string;
+  voiceLang: string; // "en" or "multi"
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -28,4 +30,6 @@ export const DEFAULT_SETTINGS: Settings = {
   tavilyKey: "",
   aboutMe: "",
   instructions: "",
+  deepgramKey: "",
+  voiceLang: "en",
 };

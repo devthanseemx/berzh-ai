@@ -255,6 +255,32 @@ export default function SettingsDialog({ settings, onSave, onClose }: Props) {
             </Field>
           </Section>
 
+          <Section title="Voice listening">
+            <Field label="Deepgram API key">
+              <input
+                type="password"
+                className={inputCls}
+                value={draft.deepgramKey}
+                onChange={(e) => set("deepgramKey", e.target.value)}
+                placeholder="Deepgram API key"
+              />
+              <p className="mt-1 text-xs text-muted">
+                Free key at deepgram.com (new accounts get starting credit). Audio is sent to
+                Deepgram only while listening is on.
+              </p>
+            </Field>
+            <Field label="Spoken language">
+              <select
+                className={inputCls}
+                value={draft.voiceLang}
+                onChange={(e) => set("voiceLang", e.target.value)}
+              >
+                <option value="en">English</option>
+                <option value="multi">Multilingual (mixed languages)</option>
+              </select>
+            </Field>
+          </Section>
+
           <Section title="Personalization">
             <label className="flex items-start gap-3 cursor-pointer">
               <input

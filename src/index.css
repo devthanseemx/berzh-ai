@@ -16,3 +16,38 @@ body { margin: 0; background: #ffffff; color: var(--color-ink); font-size: 14px;
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: #c9c8c4; }
 ::-webkit-scrollbar-thumb:hover { background: #a9a8a4; }
+
+/* Voice mode blob */
+@keyframes blob-morph {
+  0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+  25% { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; }
+  50% { border-radius: 50% 60% 30% 60% / 30% 60% 70% 40%; }
+  75% { border-radius: 65% 35% 55% 45% / 70% 35% 55% 50%; }
+}
+@keyframes blob-spin {
+  to { transform: rotate(360deg); }
+}
+
+.blob-wrap { filter: drop-shadow(0 14px 30px rgba(31, 79, 216, 0.35)); }
+.blob { position: absolute; animation: blob-morph 9s ease-in-out infinite; }
+.blob-a {
+  inset: 0;
+  background: radial-gradient(circle at 30% 28%, #9bb9ff 0%, #1f4fd8 72%);
+}
+.blob-b {
+  inset: 0;
+  opacity: 0.55;
+  filter: blur(6px);
+  background: radial-gradient(circle at 70% 70%, #b6ccff 0%, #3b6cf0 70%);
+  animation: blob-morph 13s ease-in-out infinite reverse, blob-spin 26s linear infinite;
+}
+.blob-c {
+  inset: 16px;
+  opacity: 0.55;
+  background: radial-gradient(circle at 38% 32%, #ffffff 0%, rgba(255, 255, 255, 0) 62%);
+  animation-duration: 7s;
+}
+/* faster, livelier while you are speaking */
+.blob-fast .blob-a { animation-duration: 3.6s; }
+.blob-fast .blob-b { animation-duration: 5s, 14s; }
+.blob-fast .blob-c { animation-duration: 3s; }

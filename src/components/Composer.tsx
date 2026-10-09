@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from "react";
-import { ArrowUp, Globe, Smile, Square, User } from "lucide-react";
+import { useState } from "react";
+import { ArrowUp, Globe, Mic, Smile, Square, User } from "lucide-react";
+import Chip from "./Chip";
 
 interface Props {
   onSend: (text: string) => void;
@@ -12,37 +13,7 @@ interface Props {
   onToggleTone: () => void;
   onToggleAsMe: () => void;
   onToggleWeb: () => void;
-}
-
-function Chip({
-  active,
-  label,
-  title,
-  icon,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  title: string;
-  icon: ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      aria-pressed={active}
-      onClick={onClick}
-      className={`h-7 px-3 flex items-center gap-1.5 rounded-full border text-xs ${
-        active
-          ? "border-accent bg-accent-soft text-accent font-medium"
-          : "border-line text-muted hover:bg-bg"
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
-  );
+  onStartVoice: () => void;
 }
 
 export default function Composer({
@@ -56,6 +27,7 @@ export default function Composer({
   onToggleTone,
   onToggleAsMe,
   onToggleWeb,
+  onStartVoice,
 }: Props) {
   const [text, setText] = useState("");
 
@@ -86,6 +58,13 @@ export default function Composer({
             }
           }}
         />
+        <button
+          onClick={onStartVoice}
+          title="Listen: ask by voice"
+          className="h-9 w-9 flex items-center justify-center rounded-full border border-line text-muted hover:bg-bg hover:text-accent"
+        >
+          <Mic size={18} />
+        </button>
         {busy ? (
           <button
             onClick={onStop}

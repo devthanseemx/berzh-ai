@@ -18,6 +18,7 @@ import { extractText, chunkText } from "./docs";
 import { searchDocs, invalidateIndex, type DocHit } from "./rag";
 import { searchWeb, type WebHit } from "./web";
 import { decideRoute } from "./router";
+import { startVoice, describeMicError, type VoiceSession, type VoiceState } from "./voice";
 import { DEFAULT_SETTINGS, type Settings } from "./settings";
 import type { Doc, Message, Preview, Ref, Session, Source } from "./types";
 
@@ -50,6 +51,8 @@ const docHit = (s: Session, text: string): Promise<DocHit | null> =>
     ? Promise.resolve(null)
     : searchDocs(s.id, retrievalQuery(s, text)).catch(() => null);
 
+const VOICE_VOICE_DELAY = 300; // pause before drafting while speaking (ms)
+
 interface ConfirmState {
   title: string;
   message: string;
@@ -66,6 +69,8 @@ export default function App() {
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [streamingIds, setStreamingIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<Preview | null>(null);
+  const [voice, setVoice] = useState<VoiceState | null>(null);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
 
   const controllers = useRef(new Map<string, AbortController>());
   const deleted = useRef(new Set<string>());
@@ -73,6 +78,8 @@ export default function App() {
   const draftRef = useRef<Draft | null>(null);
   const typingTimer = useRef<number | undefined>(undefined);
   const lastTyped = useRef("");
+  const voiceRef = useRef<VoiceSession | null>(null);
+  const voiceGen = useRef(0);
 
   // Always-fresh copies for timers and callbacks
   const sessionsRef = useRef<Session[]>([]);
@@ -81,6 +88,10 @@ export default function App() {
   settingsRef.current = settings;
   const activeIdRef = useRef("");
   activeIdRef.current = activeId;
+  const voiceOnRef = useRef(false);
+  voiceOnRef.current = voice !== null && voice.phase !== "error";
+  const sendRef = useRef<(text: string) => Promise<void>>(async () => {});
+  const onTypingRef = useRef<(text: string, delay?: number) => void>(() => {});
 
   useEffect(() => {
     db.initSessions()
@@ -101,6 +112,10 @@ export default function App() {
     db.loadSettings()
       .then(setSettings)
       .catch((e) => console.error("Failed to load settings:", e));
+
+    return () => {
+      voiceRef.current?.stop(); // release the microphone
+    };
   }, []);
 
   const active = sessions.find((s) => s.id === activeId) ?? sessions[0];
@@ -141,7 +156,7 @@ export default function App() {
     setPreview(null);
   };
 
-  const onTyping = (text: string) => {
+  const onTyping = (text: string, delay: number = DEBOUNCE_MS) => {
     lastTyped.current = text;
     window.clearTimeout(typingTimer.current);
     const typed = text.trim();
@@ -158,7 +173,8 @@ export default function App() {
 
       const sid = activeIdRef.current;
       const session = sessionsRef.current.find((s) => s.id === sid);
-      if (!session || controllers.current.has(sid)) return;
+      // by voice you may already ask the next question while the last answer is still being written
+      if (!session || (controllers.current.has(sid) && !voiceOnRef.current)) return;
 
       const prev = draftRef.current;
       if (prev && prev.sessionId === sid && prev.typed === typed && !prev.error) {
@@ -216,8 +232,9 @@ export default function App() {
         docs: d.usedDocs,
         web: false,
       });
-    }, DEBOUNCE_MS);
+    }, delay);
   };
+  onTypingRef.current = onTyping;
 
   /** Redo the preview for whatever is currently typed (after a setting changed). */
   const refreshDraft = () => {
@@ -444,9 +461,101 @@ export default function App() {
       removeMessage(sessionId, botId); // stopped before any text arrived
     }
   };
+  sendRef.current = send;
 
   const stop = () => {
     if (active) controllers.current.get(active.id)?.abort();
+  };
+
+  /* ---------- voice listening ---------- */
+
+  const handleVoiceQuestion = async (text: string) => {
+    const q = text.trim();
+    setVoice((v) => (v ? { ...v, transcript: "", question: q, hearing: false } : v));
+
+    // ignore coughs and one-word noise
+    if (q.split(/\s+/).length < 2) {
+      discardDraft();
+      return;
+    }
+
+    // a new question replaces an answer that is still being written
+    const sid = activeIdRef.current;
+    controllers.current.get(sid)?.abort();
+    for (let i = 0; i < 30 && controllers.current.has(sid); i++) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    await sendRef.current(q);
+  };
+
+  const startVoiceMode = async () => {
+    if (voiceRef.current) return;
+    const cfg = settingsRef.current;
+
+    if (!cfg.deepgramKey.trim()) {
+      setVoice({
+        phase: "error",
+        hearing: false,
+        transcript: "",
+        question: "",
+        error: "Add your Deepgram API key in Settings (Voice listening section) to use listening mode.",
+      });
+      return;
+    }
+
+    discardDraft();
+    const gen = ++voiceGen.current;
+    setVoice({ phase: "connecting", hearing: false, transcript: "", question: "", error: "" });
+
+    try {
+      const session = await startVoice(
+        { apiKey: cfg.deepgramKey, language: cfg.voiceLang },
+        {
+          onStatus: (phase) =>
+            setVoice((v) => (v ? { ...v, phase, error: "" } : v)),
+          onSpeech: (hearing) => setVoice((v) => (v ? { ...v, hearing } : v)),
+          onTranscript: (text) => {
+            setVoice((v) => (v ? { ...v, transcript: text } : v));
+            onTypingRef.current(text, VOICE_VOICE_DELAY);
+          },
+          onUtteranceEnd: (text) => {
+            handleVoiceQuestion(text);
+          },
+          onError: (msg) =>
+            setVoice((v) => (v ? { ...v, phase: "error", hearing: false, error: msg } : v)),
+        }
+      );
+
+      if (gen !== voiceGen.current) {
+        session.stop(); // stopped while the microphone was starting
+        return;
+      }
+      voiceRef.current = session;
+      setAnalyser(session.analyser);
+    } catch (e) {
+      if (gen !== voiceGen.current) return;
+      setVoice({
+        phase: "error",
+        hearing: false,
+        transcript: "",
+        question: "",
+        error: describeMicError(e),
+      });
+    }
+  };
+
+  const stopVoiceMode = () => {
+    voiceGen.current++;
+    voiceRef.current?.stop();
+    voiceRef.current = null;
+    setAnalyser(null);
+    setVoice(null);
+    discardDraft();
+  };
+
+  const retryVoice = () => {
+    stopVoiceMode();
+    void startVoiceMode();
   };
 
   /* ---------- documents ---------- */
@@ -528,9 +637,15 @@ export default function App() {
         humanTone={settings.humanTone}
         answerAsMe={settings.answerAsMe}
         webSearch={settings.webSearch}
+        voice={voice}
+        analyser={analyser}
         onToggleTone={() => toggleSetting("humanTone")}
         onToggleAsMe={() => toggleSetting("answerAsMe")}
         onToggleWeb={() => toggleSetting("webSearch")}
+        onStartVoice={startVoiceMode}
+        onStopVoice={stopVoiceMode}
+        onRetryVoice={retryVoice}
+        onOpenSettings={() => setSettingsOpen(true)}
         onSend={send}
         onStop={stop}
         onTyping={onTyping}

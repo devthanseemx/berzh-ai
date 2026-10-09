@@ -2,8 +2,10 @@ import { useEffect, useRef } from "react";
 import { PanelRight } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Preview, Session } from "../types";
+import type { VoiceState } from "../voice";
 import Composer from "./Composer";
 import LivePreview from "./LivePreview";
+import VoiceMode from "./VoiceMode";
 
 const sourceLabel = {
   documents: "From documents",
@@ -25,9 +27,15 @@ interface Props {
   humanTone: boolean;
   answerAsMe: boolean;
   webSearch: boolean;
+  voice: VoiceState | null;
+  analyser: AnalyserNode | null;
   onToggleTone: () => void;
   onToggleAsMe: () => void;
   onToggleWeb: () => void;
+  onStartVoice: () => void;
+  onStopVoice: () => void;
+  onRetryVoice: () => void;
+  onOpenSettings: () => void;
   onSend: (text: string) => void;
   onStop: () => void;
   onTyping: (text: string) => void;
@@ -41,9 +49,15 @@ export default function ChatView({
   humanTone,
   answerAsMe,
   webSearch,
+  voice,
+  analyser,
   onToggleTone,
   onToggleAsMe,
   onToggleWeb,
+  onStartVoice,
+  onStopVoice,
+  onRetryVoice,
+  onOpenSettings,
   onSend,
   onStop,
   onTyping,
@@ -55,8 +69,11 @@ export default function ChatView({
     endRef.current?.scrollIntoView();
   }, [session.messages.length]);
 
+  const lastAssistant =
+    [...session.messages].reverse().find((m) => m.role === "assistant") ?? null;
+
   return (
-    <section className="flex-1 min-w-0 flex flex-col bg-white">
+    <section className="relative flex-1 min-w-0 flex flex-col bg-white">
       <header className="h-12 px-5 flex items-center justify-between border-b border-line">
         <span className="font-medium truncate">{session.title}</span>
         <button
@@ -120,7 +137,7 @@ export default function ChatView({
         <div ref={endRef} />
       </div>
 
-      {preview && (
+      {preview && !voice && (
         <div className="bg-white px-4 pt-2">
           <LivePreview preview={preview} />
         </div>
@@ -136,7 +153,26 @@ export default function ChatView({
         onToggleTone={onToggleTone}
         onToggleAsMe={onToggleAsMe}
         onToggleWeb={onToggleWeb}
+        onStartVoice={onStartVoice}
       />
+
+      {voice && (
+        <VoiceMode
+          voice={voice}
+          analyser={analyser}
+          preview={preview}
+          last={lastAssistant}
+          humanTone={humanTone}
+          answerAsMe={answerAsMe}
+          webSearch={webSearch}
+          onToggleTone={onToggleTone}
+          onToggleAsMe={onToggleAsMe}
+          onToggleWeb={onToggleWeb}
+          onStop={onStopVoice}
+          onRetry={onRetryVoice}
+          onOpenSettings={onOpenSettings}
+        />
+      )}
     </section>
   );
 }
