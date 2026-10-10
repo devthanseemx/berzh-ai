@@ -8,6 +8,9 @@ interface Props {
   onNew: () => void;
   onDelete: (id: string) => void;
   onOpenSettings: () => void;
+    version: string;
+  updateAvailable: boolean;
+  onUpdateClick: () => void;
 }
 
 export default function Sidebar({
@@ -17,6 +20,9 @@ export default function Sidebar({
   onNew,
   onDelete,
   onOpenSettings,
+  version,
+  updateAvailable,
+  onUpdateClick
 }: Props) {
   // empty chats are not part of the history
   const visible = sessions.filter((s) => s.messages.length > 0 || s.docs.length > 0);
@@ -67,13 +73,24 @@ export default function Sidebar({
         })}
       </nav>
       <div className="p-2 border-t border-line">
-        <button
-          onClick={onOpenSettings}
-          className="w-full h-10 px-3 flex items-center gap-2 rounded-xl hover:bg-bg"
-        >
-          <Settings size={16} /> Settings
-        </button>
-      </div>
+  <button
+    onClick={onOpenSettings}
+    className="w-full h-10 px-3 flex items-center gap-2 rounded-xl hover:bg-bg"
+  >
+    <Settings size={16} /> Settings
+  </button>
+  <div className="px-3 pt-1 pb-0.5 flex items-center justify-between text-xs text-muted">
+    <span>Version {version || "..."}</span>
+    {updateAvailable && (
+      <button
+        onClick={onUpdateClick}
+        className="px-2 py-0.5 rounded-full bg-accent-soft text-accent font-medium hover:underline"
+      >
+        Update available
+      </button>
+    )}
+  </div>
+</div>
     </aside>
   );
 }

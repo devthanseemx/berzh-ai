@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
+import type { Update } from "@tauri-apps/plugin-updater";
 import Sidebar from "./components/Sidebar";
 import ChatView from "./components/ChatView";
 import SourcesPanel from "./components/SourcesPanel";
 import SettingsDialog from "./components/SettingsDialog";
 import ConfirmDialog from "./components/ConfirmDialog";
+import UpdateBanner from "./components/UpdateBanner";
+import Splash, { type Step, type StepState } from "./components/Splash";
 import * as db from "./db";
 import { streamChat, ConfigError } from "./llm";
 import {
@@ -18,11 +22,16 @@ import { extractText, chunkText } from "./docs";
 import { searchDocs, invalidateIndex, type DocHit } from "./rag";
 import { searchWeb, type WebHit } from "./web";
 import { decideRoute } from "./router";
-import { startVoice, describeMicError, type VoiceSession, type VoiceState } from "./voice";
+import { ensureOmniRoute } from "./startup";
+import { checkForUpdate, installUpdate, type UpdateUi } from "./updater";
+import {
+  startVoice,
+  describeMicError,
+  type VoiceSession,
+  type VoiceState,
+} from "./voice";
 import { DEFAULT_SETTINGS, type Settings } from "./settings";
 import type { Doc, Message, Preview, Ref, Session, Source } from "./types";
-import Splash, { type Step, type StepState } from "./components/Splash";
-import { ensureOmniRoute } from "./startup";
 
 const persist = (p: Promise<unknown>) =>
   p.catch((e) => console.error("DB error:", e));
@@ -53,7 +62,7 @@ const docHit = (s: Session, text: string): Promise<DocHit | null> =>
     ? Promise.resolve(null)
     : searchDocs(s.id, retrievalQuery(s, text)).catch(() => null);
 
-const VOICE_VOICE_DELAY = 300; // pause before drafting while speaking (ms)
+const VOICE_DELAY = 300; // pause before drafting while speaking (ms)
 
 interface ConfirmState {
   title: string;
@@ -64,6 +73,16 @@ interface ConfirmState {
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState("");
+  const [sourcesOpen, setSourcesOpen] = useState(true);
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [streamingIds, setStreamingIds] = useState<string[]>([]);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [voice, setVoice] = useState<VoiceState | null>(null);
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
+
+  // startup (loading screen)
   const [bootDone, setBootDone] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
   const [steps, setSteps] = useState<Step[]>([
@@ -73,14 +92,6 @@ export default function App() {
   ]);
   const bootStarted = useRef(false);
   const bootSettings = useRef<Settings>(DEFAULT_SETTINGS);
-  const [sourcesOpen, setSourcesOpen] = useState(true);
-  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
-  const [streamingIds, setStreamingIds] = useState<string[]>([]);
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [voice, setVoice] = useState<VoiceState | null>(null);
-  const [analyser, setAnalyser] = useState<AnalyserNode | null>(null);
 
   const controllers = useRef(new Map<string, AbortController>());
   const deleted = useRef(new Set<string>());
@@ -100,8 +111,10 @@ export default function App() {
   activeIdRef.current = activeId;
   const voiceOnRef = useRef(false);
   voiceOnRef.current = voice !== null && voice.phase !== "error";
-  const sendRef = useRef<(text: string) => Promise<void>>(async () => { });
-  const onTypingRef = useRef<(text: string, delay?: number) => void>(() => { });
+  const sendRef = useRef<(text: string) => Promise<void>>(async () => {});
+  const onTypingRef = useRef<(text: string, delay?: number) => void>(() => {});
+
+  /* ---------- startup ---------- */
 
   const setStep = (id: string, state: StepState, label?: string) =>
     setSteps((prev) =>
@@ -143,8 +156,8 @@ export default function App() {
         result === "already-running"
           ? "OmniRoute is already running"
           : result === "started"
-            ? "OmniRoute is ready"
-            : "OmniRoute auto-start is off"
+          ? "OmniRoute is ready"
+          : "OmniRoute auto-start is off"
       );
     } catch (e) {
       setStep("server", "failed", "OmniRoute did not start");
@@ -173,6 +186,87 @@ export default function App() {
       voiceRef.current?.stop(); // release the microphone
     };
   }, []);
+
+  /* ---------- version & updates ---------- */
+
+  const [version, setVersion] = useState("");
+  const [upd, setUpd] = useState<UpdateUi>({ status: "idle" });
+  const [bannerOpen, setBannerOpen] = useState(true);
+  const updateRef = useRef<Update | null>(null);
+  const updStatusRef = useRef(upd.status);
+  updStatusRef.current = upd.status;
+
+  const checkUpdates = async (manual: boolean) => {
+    const s = updStatusRef.current;
+    if (s === "checking" || s === "downloading" || s === "installing") return;
+
+    setUpd((u) => ({ ...u, status: "checking", error: undefined }));
+    try {
+      const update = await checkForUpdate();
+      if (update) {
+        updateRef.current = update;
+        setUpd({ status: "available", version: update.version, notes: update.body ?? "" });
+        setBannerOpen(true);
+      } else {
+        updateRef.current = null;
+        setUpd({ status: "uptodate" });
+      }
+    } catch (e) {
+      const known = updateRef.current;
+      if (manual) {
+        setUpd({ status: "error", error: e instanceof Error ? e.message : String(e) });
+      } else {
+        setUpd(
+          known
+            ? { status: "available", version: known.version, notes: known.body ?? "" }
+            : { status: "idle" }
+        );
+      }
+    }
+  };
+
+  const installNow = async () => {
+    const update = updateRef.current;
+    if (!update) return;
+    setUpd((u) => ({ ...u, status: "downloading", progress: 0, error: undefined }));
+    try {
+      voiceRef.current?.stop(); // release the microphone before restarting
+      await installUpdate(update, (p) =>
+        setUpd((u) => ({ ...u, status: "downloading", progress: p ?? undefined }))
+      );
+      setUpd((u) => ({ ...u, status: "installing" }));
+    } catch (e) {
+      setUpd((u) => ({
+        ...u,
+        status: "error",
+        error: e instanceof Error ? e.message : String(e),
+      }));
+    }
+  };
+
+  useEffect(() => {
+    getVersion()
+      .then(setVersion)
+      .catch(() => {});
+  }, []);
+
+  // check shortly after the app opens, then every 6 hours
+  useEffect(() => {
+    if (!bootDone) return;
+    const first = window.setTimeout(() => void checkUpdates(false), 3000);
+    const every = window.setInterval(() => void checkUpdates(false), 6 * 60 * 60 * 1000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(every);
+    };
+  }, [bootDone]);
+
+  const updateAvailable =
+    upd.status === "available" || upd.status === "downloading" || upd.status === "installing";
+  const showBanner =
+    bannerOpen && (updateAvailable || (upd.status === "error" && !!updateRef.current));
+
+  /* ---------- helpers ---------- */
 
   const active = sessions.find((s) => s.id === activeId) ?? sessions[0];
   const busy = !!active && streamingIds.includes(active.id);
@@ -554,7 +648,8 @@ export default function App() {
         hearing: false,
         transcript: "",
         question: "",
-        error: "Add your Deepgram API key in Settings (Voice listening section) to use listening mode.",
+        error:
+          "Add your Deepgram API key in Settings (Voice listening section) to use listening mode.",
       });
       return;
     }
@@ -567,12 +662,11 @@ export default function App() {
       const session = await startVoice(
         { apiKey: cfg.deepgramKey, language: cfg.voiceLang },
         {
-          onStatus: (phase) =>
-            setVoice((v) => (v ? { ...v, phase, error: "" } : v)),
+          onStatus: (phase) => setVoice((v) => (v ? { ...v, phase, error: "" } : v)),
           onSpeech: (hearing) => setVoice((v) => (v ? { ...v, hearing } : v)),
           onTranscript: (text) => {
             setVoice((v) => (v ? { ...v, transcript: text } : v));
-            onTypingRef.current(text, VOICE_VOICE_DELAY);
+            onTypingRef.current(text, VOICE_DELAY);
           },
           onUtteranceEnd: (text) => {
             handleVoiceQuestion(text);
@@ -674,6 +768,8 @@ export default function App() {
     refreshDraft();
   };
 
+  /* ---------- render ---------- */
+
   if (!bootDone || !active) {
     return (
       <Splash
@@ -694,6 +790,9 @@ export default function App() {
         onNew={addSession}
         onDelete={requestDelete}
         onOpenSettings={() => setSettingsOpen(true)}
+        version={version}
+        updateAvailable={updateAvailable}
+        onUpdateClick={() => setBannerOpen(true)}
       />
       <ChatView
         session={active}
@@ -724,6 +823,10 @@ export default function App() {
           settings={settings}
           onSave={saveSettings}
           onClose={() => setSettingsOpen(false)}
+          version={version}
+          upd={upd}
+          onCheckUpdate={() => void checkUpdates(true)}
+          onInstallUpdate={() => void installNow()}
         />
       )}
       {confirm && (
@@ -734,6 +837,13 @@ export default function App() {
           danger
           onConfirm={confirm.onConfirm}
           onCancel={() => setConfirm(null)}
+        />
+      )}
+      {showBanner && (
+        <UpdateBanner
+          upd={upd}
+          onInstall={() => void installNow()}
+          onLater={() => setBannerOpen(false)}
         />
       )}
     </div>

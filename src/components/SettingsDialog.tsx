@@ -2,11 +2,16 @@ import { useEffect, useState, type ReactNode } from "react";
 import { RefreshCw, X } from "lucide-react";
 import type { Settings } from "../settings";
 import { listOmniModels } from "../llm";
+import type { UpdateUi } from "../updater";
 
 interface Props {
   settings: Settings;
   onSave: (s: Settings) => void;
   onClose: () => void;
+  version: string;
+  upd: UpdateUi;
+  onCheckUpdate: () => void;
+  onInstallUpdate: () => void;
 }
 
 const inputCls =
@@ -86,7 +91,7 @@ function ModelPicker({
   );
 }
 
-export default function SettingsDialog({ settings, onSave, onClose }: Props) {
+export default function SettingsDialog({ settings, onSave, onClose, version, upd, onCheckUpdate, onInstallUpdate }: Props) {
   const [draft, setDraft] = useState<Settings>(settings);
   const [models, setModels] = useState<string[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -112,6 +117,20 @@ export default function SettingsDialog({ settings, onSave, onClose }: Props) {
     loadModels();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const updateText =
+    upd.status === "uptodate"
+      ? "You have the latest version."
+      : upd.status === "available"
+        ? `Version ${upd.version} is available.`
+        : upd.status === "downloading"
+          ? `Downloading update${upd.progress != null ? ` ${upd.progress}%` : "..."}`
+          : upd.status === "installing"
+            ? "Installing. The app will restart."
+            : upd.status === "error"
+              ? `Update check failed: ${upd.error}`
+              : "";
+  const updateBusy = upd.status === "checking" || upd.status === "downloading" || upd.status === "installing";
 
   return (
     <div
@@ -353,6 +372,32 @@ export default function SettingsDialog({ settings, onSave, onClose }: Props) {
                 onChange={(e) => set("instructions", e.target.value)}
               />
             </Field>
+          </Section>
+
+          <Section title="About">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium">Berzh AI</div>
+                <div className="text-xs text-muted">Version {version || "..."}</div>
+              </div>
+              {upd.status === "available" ? (
+                <button
+                  onClick={onInstallUpdate}
+                  className="h-9 px-4 rounded-xl bg-accent text-white hover:opacity-90"
+                >
+                  Install {upd.version}
+                </button>
+              ) : (
+                <button
+                  onClick={onCheckUpdate}
+                  disabled={updateBusy}
+                  className="h-9 px-4 rounded-xl border border-line hover:bg-bg disabled:opacity-60"
+                >
+                  {upd.status === "checking" ? "Checking..." : "Check for updates"}
+                </button>
+              )}
+            </div>
+            {updateText && <p className="text-xs text-muted">{updateText}</p>}
           </Section>
 
           <p className="text-xs text-muted">

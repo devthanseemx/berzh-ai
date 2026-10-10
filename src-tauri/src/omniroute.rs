@@ -101,7 +101,11 @@ pub fn omniroute_status(state: State<'_, OmniState>) -> OmniStatus {
             Err(_) => (false, None),
         },
     };
-    let stderr = state.stderr.lock().map(|b| b.join("\n")).unwrap_or_default();
+    let stderr = state
+        .stderr
+        .lock()
+        .map(|b| b.join("\n"))
+        .unwrap_or_default();
     OmniStatus {
         spawned,
         running,
