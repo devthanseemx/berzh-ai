@@ -21,6 +21,8 @@ import { decideRoute } from "./router";
 import { startVoice, describeMicError, type VoiceSession, type VoiceState } from "./voice";
 import { DEFAULT_SETTINGS, type Settings } from "./settings";
 import type { Doc, Message, Preview, Ref, Session, Source } from "./types";
+import Splash, { type Step, type StepState } from "./components/Splash";
+import { ensureOmniRoute } from "./startup";
 
 const persist = (p: Promise<unknown>) =>
   p.catch((e) => console.error("DB error:", e));
@@ -62,7 +64,15 @@ interface ConfirmState {
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState("");
-  const [ready, setReady] = useState(false);
+  const [bootDone, setBootDone] = useState(false);
+  const [bootError, setBootError] = useState<string | null>(null);
+  const [steps, setSteps] = useState<Step[]>([
+    { id: "data", label: "Loading your chats and settings", state: "pending" },
+    { id: "server", label: "Starting OmniRoute", state: "pending" },
+    { id: "interface", label: "Opening Berzh AI", state: "pending" },
+  ]);
+  const bootStarted = useRef(false);
+  const bootSettings = useRef<Settings>(DEFAULT_SETTINGS);
   const [sourcesOpen, setSourcesOpen] = useState(true);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -90,29 +100,75 @@ export default function App() {
   activeIdRef.current = activeId;
   const voiceOnRef = useRef(false);
   voiceOnRef.current = voice !== null && voice.phase !== "error";
-  const sendRef = useRef<(text: string) => Promise<void>>(async () => {});
-  const onTypingRef = useRef<(text: string, delay?: number) => void>(() => {});
+  const sendRef = useRef<(text: string) => Promise<void>>(async () => { });
+  const onTypingRef = useRef<(text: string, delay?: number) => void>(() => { });
+
+  const setStep = (id: string, state: StepState, label?: string) =>
+    setSteps((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, state, label: label ?? s.label } : s))
+    );
+
+  const runBoot = async (dataLoaded: boolean) => {
+    setBootError(null);
+
+    if (!dataLoaded) {
+      setStep("data", "active");
+      const [cfg, loaded] = await Promise.all([
+        db.loadSettings().catch((e) => {
+          console.error("Failed to load settings:", e);
+          return DEFAULT_SETTINGS;
+        }),
+        db.initSessions().catch((e) => {
+          console.error("Failed to load database:", e);
+          return [] as Session[];
+        }),
+      ]);
+      loaded.forEach((s) => persisted.current.add(s.id));
+      const fresh = db.newSession();
+      bootSettings.current = cfg;
+      setSettings(cfg);
+      setSessions([fresh, ...loaded]);
+      setActiveId(fresh.id);
+      setStep("data", "done");
+    }
+
+    setStep("server", "active");
+    try {
+      const result = await ensureOmniRoute(bootSettings.current, (secs) =>
+        setStep("server", "active", `Starting OmniRoute (${secs}s)...`)
+      );
+      setStep(
+        "server",
+        result === "skipped" ? "skipped" : "done",
+        result === "already-running"
+          ? "OmniRoute is already running"
+          : result === "started"
+            ? "OmniRoute is ready"
+            : "OmniRoute auto-start is off"
+      );
+    } catch (e) {
+      setStep("server", "failed", "OmniRoute did not start");
+      setBootError(e instanceof Error ? e.message : String(e));
+      return; // wait for Retry or Continue
+    }
+
+    setStep("interface", "active");
+    await new Promise((r) => setTimeout(r, 350));
+    setStep("interface", "done");
+    await new Promise((r) => setTimeout(r, 200));
+    setBootDone(true);
+  };
+
+  const retryBoot = () => {
+    setStep("server", "pending", "Starting OmniRoute");
+    void runBoot(true);
+  };
 
   useEffect(() => {
-    db.initSessions()
-      .then((loaded) => {
-        loaded.forEach((s) => persisted.current.add(s.id));
-        const fresh = db.newSession();
-        setSessions([fresh, ...loaded]);
-        setActiveId(fresh.id);
-      })
-      .catch((e) => {
-        console.error("Failed to load database:", e);
-        const fresh = db.newSession();
-        setSessions([fresh]);
-        setActiveId(fresh.id);
-      })
-      .finally(() => setReady(true));
-
-    db.loadSettings()
-      .then(setSettings)
-      .catch((e) => console.error("Failed to load settings:", e));
-
+    if (!bootStarted.current) {
+      bootStarted.current = true;
+      void runBoot(false);
+    }
     return () => {
       voiceRef.current?.stop(); // release the microphone
     };
@@ -618,10 +674,19 @@ export default function App() {
     refreshDraft();
   };
 
-  if (!ready || !active) return <div className="h-screen bg-white" />;
+  if (!bootDone || !active) {
+    return (
+      <Splash
+        steps={steps}
+        error={bootError}
+        onRetry={retryBoot}
+        onContinue={() => setBootDone(true)}
+      />
+    );
+  }
 
   return (
-    <div className="h-screen flex">
+    <div className="h-screen flex fade-in">
       <Sidebar
         sessions={sessions}
         activeId={active.id}

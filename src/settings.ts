@@ -14,6 +14,8 @@ export interface Settings {
   instructions: string;
   deepgramKey: string;
   voiceLang: string; // "en" or "multi"
+  omniAutoStart: boolean;
+  omniCommand: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -32,4 +34,6 @@ export const DEFAULT_SETTINGS: Settings = {
   instructions: "",
   deepgramKey: "",
   voiceLang: "en",
+  omniAutoStart: true,
+  omniCommand: "omniroute",
 };

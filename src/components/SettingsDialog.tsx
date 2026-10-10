@@ -146,6 +146,29 @@ export default function SettingsDialog({ settings, onSave, onClose }: Props) {
                 onChange={(e) => set("omniKey", e.target.value)}
               />
             </Field>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4 accent-accent"
+                checked={draft.omniAutoStart}
+                onChange={(e) => set("omniAutoStart", e.target.checked)}
+              />
+              <span>
+                <span className="block font-medium">Start OmniRoute when the app opens</span>
+                <span className="block text-xs text-muted">
+                  Only for a local address. Takes effect next launch. Closing Berzh AI also
+                  stops a server it started.
+                </span>
+              </span>
+            </label>
+            <Field label="Start command">
+              <input
+                className={inputCls}
+                value={draft.omniCommand}
+                onChange={(e) => set("omniCommand", e.target.value)}
+                placeholder="omniroute"
+              />
+            </Field>
           </Section>
 
           <Section title="Answer model">

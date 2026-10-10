@@ -271,6 +271,7 @@ export async function loadSettings(): Promise<Settings> {
     ...merged,
     instructions,
     liveDraft: bool(merged.liveDraft),
+    omniAutoStart: bool(merged.omniAutoStart),
     humanTone: bool(merged.humanTone),
     answerAsMe: bool(merged.answerAsMe),
   };
