@@ -10,26 +10,14 @@ import UpdateBanner from "./components/UpdateBanner";
 import Splash, { type Step, type StepState } from "./components/Splash";
 import * as db from "./db";
 import { streamChat, ConfigError } from "./llm";
-import {
-  startDraft,
-  draftMatches,
-  followDraft,
-  MIN_CHARS,
-  DEBOUNCE_MS,
-  type Draft,
-} from "./live";
+import { startDraft, draftMatches, followDraft, MIN_CHARS, DEBOUNCE_MS, type Draft, } from "./live";
 import { extractText, chunkText } from "./docs";
 import { searchDocs, invalidateIndex, type DocHit } from "./rag";
 import { searchWeb, type WebHit } from "./web";
 import { decideRoute } from "./router";
 import { ensureOmniRoute } from "./startup";
 import { checkForUpdate, installUpdate, type UpdateUi } from "./updater";
-import {
-  startVoice,
-  describeMicError,
-  type VoiceSession,
-  type VoiceState,
-} from "./voice";
+import { startVoice, describeMicError, type VoiceSession, type VoiceState, } from "./voice";
 import { DEFAULT_SETTINGS, type Settings } from "./settings";
 import type { Doc, Message, Preview, Ref, Session, Source } from "./types";
 
@@ -111,8 +99,8 @@ export default function App() {
   activeIdRef.current = activeId;
   const voiceOnRef = useRef(false);
   voiceOnRef.current = voice !== null && voice.phase !== "error";
-  const sendRef = useRef<(text: string) => Promise<void>>(async () => {});
-  const onTypingRef = useRef<(text: string, delay?: number) => void>(() => {});
+  const sendRef = useRef<(text: string) => Promise<void>>(async () => { });
+  const onTypingRef = useRef<(text: string, delay?: number) => void>(() => { });
 
   /* ---------- startup ---------- */
 
@@ -156,8 +144,8 @@ export default function App() {
         result === "already-running"
           ? "OmniRoute is already running"
           : result === "started"
-          ? "OmniRoute is ready"
-          : "OmniRoute auto-start is off"
+            ? "OmniRoute is ready"
+            : "OmniRoute auto-start is off"
       );
     } catch (e) {
       setStep("server", "failed", "OmniRoute did not start");
@@ -200,9 +188,17 @@ export default function App() {
     const s = updStatusRef.current;
     if (s === "checking" || s === "downloading" || s === "installing") return;
 
+    const began = Date.now();
+    // keep "Checking..." visible for a moment so the result doesn't flash by
+    const settle = async () => {
+      const left = 700 - (Date.now() - began);
+      if (manual && left > 0) await new Promise((r) => setTimeout(r, left));
+    };
+
     setUpd((u) => ({ ...u, status: "checking", error: undefined }));
     try {
       const update = await checkForUpdate();
+      await settle();
       if (update) {
         updateRef.current = update;
         setUpd({ status: "available", version: update.version, notes: update.body ?? "" });
@@ -212,9 +208,23 @@ export default function App() {
         setUpd({ status: "uptodate" });
       }
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn("Update check:", msg);
+      await settle();
+
+      // no release has been published yet, so nothing newer exists
+      if (/valid release json/i.test(msg)) {
+        updateRef.current = null;
+        setUpd({ status: "uptodate" });
+        return;
+      }
+
       const known = updateRef.current;
       if (manual) {
-        setUpd({ status: "error", error: e instanceof Error ? e.message : String(e) });
+        setUpd({
+          status: "error",
+          error: "Could not check for updates. Check your internet connection and try again.",
+        });
       } else {
         setUpd(
           known
@@ -247,7 +257,7 @@ export default function App() {
   useEffect(() => {
     getVersion()
       .then(setVersion)
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // check shortly after the app opens, then every 6 hours
@@ -793,6 +803,7 @@ export default function App() {
         version={version}
         updateAvailable={updateAvailable}
         onUpdateClick={() => setBannerOpen(true)}
+        upToDate={upd.status === "uptodate"}
       />
       <ChatView
         session={active}

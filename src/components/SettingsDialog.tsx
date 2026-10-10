@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { RefreshCw, X } from "lucide-react";
 import type { Settings } from "../settings";
 import { listOmniModels } from "../llm";
 import type { UpdateUi } from "../updater";
+import { Check, RefreshCw, X } from "lucide-react";
 
 interface Props {
   settings: Settings;
@@ -119,17 +119,15 @@ export default function SettingsDialog({ settings, onSave, onClose, version, upd
   }, []);
 
   const updateText =
-    upd.status === "uptodate"
-      ? "You have the latest version."
-      : upd.status === "available"
-        ? `Version ${upd.version} is available.`
-        : upd.status === "downloading"
-          ? `Downloading update${upd.progress != null ? ` ${upd.progress}%` : "..."}`
-          : upd.status === "installing"
-            ? "Installing. The app will restart."
-            : upd.status === "error"
-              ? `Update check failed: ${upd.error}`
-              : "";
+    upd.status === "available"
+      ? `Version ${upd.version} is available.`
+      : upd.status === "downloading"
+        ? `Downloading update${upd.progress != null ? ` ${upd.progress}%` : "..."}`
+        : upd.status === "installing"
+          ? "Installing. The app will restart."
+          : upd.status === "error"
+            ? upd.error ?? "Could not check for updates."
+            : "";
   const updateBusy = upd.status === "checking" || upd.status === "downloading" || upd.status === "installing";
 
   return (
@@ -397,7 +395,18 @@ export default function SettingsDialog({ settings, onSave, onClose, version, upd
                 </button>
               )}
             </div>
-            {updateText && <p className="text-xs text-muted">{updateText}</p>}
+            {upd.status === "uptodate" && (
+              <p className="flex items-center gap-1.5 text-sm text-green-700">
+                <Check size={16} />
+                No update available. You're already up to date
+                {version ? ` (version ${version})` : ""}.
+              </p>
+            )}
+            {updateText && (
+              <p className={`text-xs ${upd.status === "error" ? "text-red-600" : "text-muted"}`}>
+                {updateText}
+              </p>
+            )}
           </Section>
 
           <p className="text-xs text-muted">

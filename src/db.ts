@@ -257,28 +257,31 @@ export async function loadSettings(): Promise<Settings> {
     "SELECT key, value FROM settings"
   );
   const stored = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  const merged = { ...DEFAULT_SETTINGS, ...stored } as Settings;
-  const bool = (v: unknown) => String(v) === "true";
+  const merged = { ...DEFAULT_SETTINGS, ...stored } as Record<string, unknown>;
+
+  // on/off settings must be real booleans, not the text "true"/"false"
+  const BOOLEAN_KEYS = [
+    "liveDraft",
+    "humanTone",
+    "answerAsMe",
+    "webSearch",
+    "omniAutoStart",
+  ] as const;
+  for (const key of BOOLEAN_KEYS) {
+    merged[key] = String(merged[key]) === "true";
+  }
+
+  const s = merged as unknown as Settings;
 
   // the old built-in "tell me about yourself" text is replaced by the "Answer as me" switch
-  const instructions = merged.instructions.startsWith(
-    'When I ask you to "tell me about yourself"'
-  )
+  const instructions = s.instructions.startsWith('When I ask you to "tell me about yourself"')
     ? ""
-    : merged.instructions;
-
+    : s.instructions;
+  // OmniRoute should not open a browser tab on every start
   const omniCommand =
-    merged.omniCommand.trim() === "omniroute" ? "omniroute --no-open" : merged.omniCommand;
+    s.omniCommand.trim() === "omniroute" ? "omniroute --no-open" : s.omniCommand;
 
-  return {
-    ...merged,
-    instructions,
-    omniCommand,
-    liveDraft: bool(merged.liveDraft),
-    omniAutoStart: bool(merged.omniAutoStart),
-    humanTone: bool(merged.humanTone),
-    answerAsMe: bool(merged.answerAsMe),
-  };
+  return { ...s, instructions, omniCommand };
 }
 
 export async function saveSettings(s: Settings) {

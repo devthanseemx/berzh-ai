@@ -8,9 +8,10 @@ interface Props {
   onNew: () => void;
   onDelete: (id: string) => void;
   onOpenSettings: () => void;
-    version: string;
+  version: string;
   updateAvailable: boolean;
   onUpdateClick: () => void;
+  upToDate: boolean;
 }
 
 export default function Sidebar({
@@ -22,7 +23,8 @@ export default function Sidebar({
   onOpenSettings,
   version,
   updateAvailable,
-  onUpdateClick
+  onUpdateClick,
+  upToDate
 }: Props) {
   // empty chats are not part of the history
   const visible = sessions.filter((s) => s.messages.length > 0 || s.docs.length > 0);
@@ -49,15 +51,13 @@ export default function Sidebar({
           return (
             <div
               key={s.id}
-              className={`group flex items-center rounded-lg ${
-                isActive ? "bg-accent-soft" : "hover:bg-bg"
-              }`}
+              className={`group flex items-center rounded-lg ${isActive ? "bg-accent-soft" : "hover:bg-bg"
+                }`}
             >
               <button
                 onClick={() => onSelect(s.id)}
-                className={`flex-1 min-w-0 text-left px-3 py-2 truncate ${
-                  isActive ? "text-accent font-medium" : ""
-                }`}
+                className={`flex-1 min-w-0 text-left px-3 py-2 truncate ${isActive ? "text-accent font-medium" : ""
+                  }`}
               >
                 {s.title}
               </button>
@@ -73,24 +73,26 @@ export default function Sidebar({
         })}
       </nav>
       <div className="p-2 border-t border-line">
-  <button
-    onClick={onOpenSettings}
-    className="w-full h-10 px-3 flex items-center gap-2 rounded-xl hover:bg-bg"
-  >
-    <Settings size={16} /> Settings
-  </button>
-  <div className="px-3 pt-1 pb-0.5 flex items-center justify-between text-xs text-muted">
-    <span>Version {version || "..."}</span>
-    {updateAvailable && (
-      <button
-        onClick={onUpdateClick}
-        className="px-2 py-0.5 rounded-full bg-accent-soft text-accent font-medium hover:underline"
-      >
-        Update available
-      </button>
-    )}
-  </div>
-</div>
+        <button
+          onClick={onOpenSettings}
+          className="w-full h-10 px-3 flex items-center gap-2 rounded-xl hover:bg-bg"
+        >
+          <Settings size={16} /> Settings
+        </button>
+        <div className="px-3 pt-1 pb-0.5 flex items-center justify-between text-xs text-muted">
+          <span>Version {version || "..."}</span>
+          {updateAvailable ? (
+            <button
+              onClick={onUpdateClick}
+              className="px-2 py-0.5 rounded-full bg-accent-soft text-accent font-medium hover:underline"
+            >
+              Update available
+            </button>
+          ) : upToDate ? (
+            <span className="text-green-600">Up to date</span>
+          ) : null}
+        </div>
+      </div>
     </aside>
   );
 }
