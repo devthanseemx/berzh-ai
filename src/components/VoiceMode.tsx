@@ -4,6 +4,7 @@ import type { Message, Preview } from "../types";
 import type { VoiceState } from "../voice";
 import Chip from "./Chip";
 import VoiceBlob from "./VoiceBlob";
+import Markdown from "./Markdown";
 
 const host = (url: string) => {
   try {
@@ -50,12 +51,12 @@ export default function VoiceMode({
   const status = isError
     ? "Not listening"
     : voice.phase === "connecting"
-    ? "Connecting..."
-    : voice.phase === "reconnecting"
-    ? "Reconnecting..."
-    : hearing
-    ? "Hearing you..."
-    : "Listening...";
+      ? "Connecting..."
+      : voice.phase === "reconnecting"
+        ? "Reconnecting..."
+        : hearing
+          ? "Hearing you..."
+          : "Listening...";
 
   // while you speak, show the live draft; otherwise the finished answer
   const liveAnswer = preview && !preview.web ? preview.answer : "";
@@ -70,9 +71,8 @@ export default function VoiceMode({
       <div className="h-12 px-5 flex items-center justify-between border-b border-line">
         <div className="flex items-center gap-2 text-sm font-medium">
           <span
-            className={`h-2 w-2 rounded-full ${
-              isError ? "bg-red-500" : "bg-green-500 animate-pulse"
-            }`}
+            className={`h-2 w-2 rounded-full ${isError ? "bg-red-500" : "bg-green-500 animate-pulse"
+              }`}
           />
           {status}
         </div>
@@ -124,11 +124,10 @@ export default function VoiceMode({
           {!isError && answer && (
             <div className={`transition-opacity ${dim ? "opacity-50" : ""}`}>
               <div
-                className={`rounded-2xl px-6 py-5 text-lg leading-relaxed whitespace-pre-wrap ${
-                  last?.error && !useLive ? "bg-red-50 text-red-700" : "bg-bg text-ink"
-                }`}
+                className={`rounded-2xl px-6 py-5 text-lg ${last?.error && !useLive ? "bg-red-50 text-red-700" : "bg-bg text-ink"
+                  }`}
               >
-                {answer}
+                {last?.error && !useLive ? answer : <Markdown text={answer} />}
               </div>
               {!useLive && last?.source && last.source !== "general" && (
                 <div className="mt-2 ml-1 flex flex-wrap items-center gap-1.5">

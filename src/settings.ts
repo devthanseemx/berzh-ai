@@ -35,5 +35,5 @@ export const DEFAULT_SETTINGS: Settings = {
   deepgramKey: "",
   voiceLang: "en",
   omniAutoStart: true,
-  omniCommand: "omniroute",
+  omniCommand: "omniroute --no-open",
 };

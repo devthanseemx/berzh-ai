@@ -267,9 +267,13 @@ export async function loadSettings(): Promise<Settings> {
     ? ""
     : merged.instructions;
 
+  const omniCommand =
+    merged.omniCommand.trim() === "omniroute" ? "omniroute --no-open" : merged.omniCommand;
+
   return {
     ...merged,
     instructions,
+    omniCommand,
     liveDraft: bool(merged.liveDraft),
     omniAutoStart: bool(merged.omniAutoStart),
     humanTone: bool(merged.humanTone),

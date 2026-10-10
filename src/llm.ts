@@ -4,7 +4,11 @@ import type { Settings } from "./settings";
 
 const BASE_PROMPT =
   "You are Berzh AI, a helpful assistant inside a desktop app. Answer clearly and concisely. " +
-  "If you are unsure, or the information may be out of date, say so instead of guessing.";
+  "If you are unsure, or the information may be out of date, say so instead of guessing.\n\n" +
+  "Format answers in Markdown so they are easy to read: keep simple answers as short plain paragraphs; " +
+  "use bullet lists for several points, numbered lists for steps (indent sub-points), **bold** for key terms, " +
+  "tables for comparisons, and fenced code blocks for code. Never add headings to short answers.";
+
 
 const ANSWER_TIMEOUT_MS = 60_000; // reasoning models may think for a while
 const LIVE_TIMEOUT_MS = 6_000;
@@ -56,6 +60,7 @@ const AS_ME_RULES =
   'Never address me as "you" and never describe me in the third person. ' +
   'For example, if asked "Tell me about yourself", answer "I am Alex and I am a ..." and never "You are Alex ...". ' +
   'Use only facts from "About me". If a detail is missing, do not invent it: keep that part general. ' +
+  "Say it the way I would speak it out loud: plain sentences, no bullet points, tables or bold. " +
   'Do not mention being an AI. If "About me" is empty, tell me to fill it in under Settings.';
 
 function buildSystemPrompt(

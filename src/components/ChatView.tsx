@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PanelRight } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Preview, Session } from "../types";
@@ -6,6 +6,8 @@ import type { VoiceState } from "../voice";
 import Composer from "./Composer";
 import LivePreview from "./LivePreview";
 import VoiceMode from "./VoiceMode";
+import { Check, Copy } from "lucide-react";
+import Markdown from "./Markdown";
 
 const sourceLabel = {
   documents: "From documents",
@@ -40,6 +42,27 @@ interface Props {
   onStop: () => void;
   onTyping: (text: string) => void;
   onToggleSources: () => void;
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      title="Copy answer"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
+        } catch {
+          /* ignore */
+        }
+      }}
+      className="p-1 rounded-md text-muted opacity-0 group-hover/msg:opacity-100 hover:text-ink hover:bg-bg"
+    >
+      {done ? <Check size={14} /> : <Copy size={14} />}
+    </button>
+  );
 }
 
 export default function ChatView({
@@ -99,23 +122,28 @@ export default function ChatView({
                   key={m.id}
                   className={`px-6 py-2 flex ${isUser ? "justify-end" : "justify-start"}`}
                 >
-                  <div className="max-w-[75%] flex flex-col">
+                  <div className={`group/msg flex flex-col min-w-0 ${isUser ? "max-w-[75%]" : "max-w-[88%]"}`}>
                     <div
-                      className={`px-4 py-2.5 rounded-2xl whitespace-pre-wrap leading-relaxed ${
-                        isUser
-                          ? "bg-accent text-white rounded-br-md"
+                      className={`px-4 py-2.5 rounded-2xl leading-relaxed ${isUser
+                          ? "bg-accent text-white rounded-br-md whitespace-pre-wrap"
                           : m.error
-                          ? "bg-red-50 text-red-700 rounded-bl-md"
-                          : "bg-bg text-ink rounded-bl-md"
-                      }`}
+                            ? "bg-red-50 text-red-700 rounded-bl-md whitespace-pre-wrap"
+                            : "bg-bg text-ink rounded-bl-md"
+                        }`}
                     >
-                      {m.text || m.status || "Thinking..."}
+                      {isUser || m.error || !m.text ? (
+                        m.text || m.status || "Thinking..."
+                      ) : (
+                        <Markdown text={m.text} />
+                      )}
                     </div>
-                    {!isUser && m.source && m.source !== "general" && (
+                    {!isUser && (
                       <div className="mt-1.5 ml-1 flex flex-wrap items-center gap-1.5">
-                        <span className="px-2 py-0.5 text-xs rounded-full border border-line text-muted">
-                          {sourceLabel[m.source]}
-                        </span>
+                        {m.source && m.source !== "general" && (
+                          <span className="px-2 py-0.5 text-xs rounded-full border border-line text-muted">
+                            {sourceLabel[m.source]}
+                          </span>
+                        )}
                         {m.refs?.map((r) => (
                           <button
                             key={r.url}
@@ -126,6 +154,7 @@ export default function ChatView({
                             {host(r.url)}
                           </button>
                         ))}
+                        {m.text && !m.error && <CopyButton text={m.text} />}
                       </div>
                     )}
                   </div>
