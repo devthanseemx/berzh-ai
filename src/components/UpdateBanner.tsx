@@ -11,7 +11,7 @@ export default function UpdateBanner({ upd, onInstall, onLater }: Props) {
   const busy = upd.status === "downloading" || upd.status === "installing";
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 w-85 rounded-2xl border border-line bg-white shadow-xl p-4 fade-in">
+    <div className="fixed bottom-4 right-4 z-40 w-85 rounded-md border border-line bg-panel shadow-xl p-4 fade-in">
       <div className="flex items-start gap-3">
         <div className="mt-0.5 h-8 w-8 shrink-0 rounded-full bg-accent-soft text-accent flex items-center justify-center">
           <Download size={16} />
@@ -52,13 +52,13 @@ export default function UpdateBanner({ upd, onInstall, onLater }: Props) {
         <div className="mt-3 flex justify-end gap-2">
           <button
             onClick={onLater}
-            className="h-9 px-4 rounded-xl border border-line hover:bg-bg"
+            className="h-9 px-4 rounded-md border border-line hover:bg-bg"
           >
             Later
           </button>
           <button
             onClick={onInstall}
-            className="h-9 px-4 rounded-xl bg-accent text-white hover:opacity-90"
+            className="h-9 px-4 rounded-md bg-accent text-panel hover:opacity-90"
           >
             {upd.status === "error" ? "Try again" : "Update now"}
           </button>

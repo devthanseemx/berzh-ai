@@ -1,4 +1,4 @@
-import { Globe, MicOff, Smile, User } from "lucide-react";
+import { Globe, MicOff, Pause, Play, Smile, User } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Message, Preview } from "../types";
 import type { VoiceState } from "../voice";
@@ -28,6 +28,9 @@ interface Props {
   onStop: () => void;
   onRetry: () => void;
   onOpenSettings: () => void;
+  /** mic muted but voice mode stays open */
+  paused: boolean;
+  onPauseToggle: () => void;
 }
 
 export default function VoiceMode({
@@ -44,8 +47,11 @@ export default function VoiceMode({
   onStop,
   onRetry,
   onOpenSettings,
+  paused,
+  onPauseToggle,
 }: Props) {
   const isError = voice.phase === "error";
+  const stopped = voice.phase === "stopped";
   const hearing = voice.hearing || !!voice.transcript;
 
   const status = isError
@@ -54,9 +60,15 @@ export default function VoiceMode({
       ? "Connecting..."
       : voice.phase === "reconnecting"
         ? "Reconnecting..."
-        : hearing
-          ? "Hearing you..."
-          : "Listening...";
+        : paused
+          ? "Paused"
+          : stopped
+            ? "Not listening"
+            : hearing
+              ? "Hearing you..."
+              : voice.answering
+                ? "Answering..."
+                : "Listening...";
 
   // while you speak, show the live draft; otherwise the finished answer
   const liveAnswer = preview && !preview.web ? preview.answer : "";
@@ -67,33 +79,74 @@ export default function VoiceMode({
   const question = voice.transcript || voice.question;
 
   return (
-    <div className="absolute inset-0 z-20 bg-white flex flex-col">
-      <div className="h-12 px-5 flex items-center justify-between border-b border-line">
+    <div className="absolute inset-0 z-20 bg-panel flex">
+      {/* the assistant effect has its own space on the left: centered and responsive */}
+      <div className="relative w-[38%] min-w-[220px] max-w-[430px] shrink-0 flex items-center justify-center bg-bg/40">
+        {/* the divider only spans the height of the visualization */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute right-0 top-1/2 h-80 xl:h-96 -translate-y-1/2 w-px bg-line"
+        />
+        <div className="w-[clamp(8.5rem,18vw,16rem)] aspect-square">
+          <VoiceBlob
+            analyser={isError ? null : analyser}
+            hearing={hearing && !paused && !isError}
+            paused={paused && !isError}
+          />
+        </div>
+      </div>
+
+      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="h-12 px-5 flex items-center justify-between border-b border-line shrink-0">
         <div className="flex items-center gap-2 text-sm font-medium">
           <span
-            className={`h-2 w-2 rounded-full ${isError ? "bg-red-500" : "bg-green-500 animate-pulse"
+            className={`h-2 w-2 rounded-full ${isError
+                ? "bg-red-500"
+                : paused
+                  ? "bg-amber-500"
+                  : stopped
+                    ? "bg-muted"
+                    : "bg-green-500 animate-pulse"
               }`}
           />
           {status}
         </div>
-        <button
-          onClick={onStop}
-          className="h-9 px-4 flex items-center gap-2 rounded-xl border border-line hover:bg-bg"
-        >
-          <MicOff size={16} /> Stop listening
-        </button>
-      </div>
-
-      <div className="shrink-0 pt-4 flex flex-col items-center">
-        <VoiceBlob analyser={isError ? null : analyser} hearing={hearing} />
-        <div className="max-w-3xl px-6 min-h-12 text-center text-lg text-muted">
-          {question ||
-            (isError ? "" : "Ask me anything. I answer as you speak.")}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={stopped ? onRetry : onPauseToggle}
+            disabled={isError}
+            title={
+              stopped
+                ? "Start listening"
+                : paused
+                  ? "Start listening again"
+                  : "Pause temporarily"
+            }
+            className="h-8 px-2.5 flex items-center gap-1.5 rounded-lg border border-line bg-panel text-xs font-medium hover:bg-bg disabled:opacity-40 transition-colors"
+          >
+            {stopped || paused ? <Play size={13} /> : <Pause size={13} />}
+            {stopped || paused ? "Start" : "Pause"}
+          </button>
+          <button
+            onClick={onStop}
+            title="Stop listening"
+            className="h-8 px-2.5 flex items-center gap-1.5 rounded-lg border border-line bg-panel text-xs font-medium text-muted hover:bg-bg hover:text-red-600 hover:border-red-300 transition-colors"
+          >
+            <MicOff size={13} /> Stop listening
+          </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pb-4">
-        <div className="max-w-3xl mx-auto">
+      <div className="flex-1 overflow-y-auto px-6 pt-4 pb-2">
+        <div className="max-w-2xl mx-auto">
+          <div className="min-h-12 mb-2 text-center text-base text-muted">
+            {question ||
+              (isError
+                ? ""
+                : stopped
+                  ? "Press Start to listen."
+                  : "Ask me anything. I answer as you speak.")}
+          </div>
           {isError && (
             <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-red-700">
               <p className="whitespace-pre-wrap">{voice.error}</p>
@@ -124,7 +177,7 @@ export default function VoiceMode({
           {!isError && answer && (
             <div className={`transition-opacity ${dim ? "opacity-50" : ""}`}>
               <div
-                className={`rounded-2xl px-6 py-5 text-lg ${last?.error && !useLive ? "bg-red-50 text-red-700" : "bg-bg text-ink"
+                className={`rounded-2xl px-6 py-5 text-base ${last?.error && !useLive ? "bg-red-50 text-red-700" : "bg-bg text-ink"
                   }`}
               >
                 {last?.error && !useLive ? answer : <Markdown text={answer} />}
@@ -151,7 +204,7 @@ export default function VoiceMode({
         </div>
       </div>
 
-      <div className="px-4 pb-4 pt-2 flex items-center justify-center gap-2">
+      <div className="px-4 pb-4 pt-2 flex items-center justify-center gap-2 shrink-0">
         <Chip
           active={humanTone}
           label="Human tone"
@@ -173,6 +226,7 @@ export default function VoiceMode({
           icon={<Globe size={14} />}
           onClick={onToggleWeb}
         />
+      </div>
       </div>
     </div>
   );

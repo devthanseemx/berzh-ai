@@ -1,11 +1,12 @@
 
-export type VoiceStatus = "connecting" | "listening" | "reconnecting";
+export type VoiceStatus = "connecting" | "listening" | "reconnecting" | "stopped";
 
 export interface VoiceState {
   phase: VoiceStatus | "error";
   hearing: boolean; // speech is happening right now
   transcript: string; // what is being said right now
   question: string; // the last finished question
+  answering: boolean; // an answer is being written - the mic stays muted until it is done
   error: string;
 }
 
@@ -20,6 +21,8 @@ export interface VoiceHandlers {
 export interface VoiceSession {
   analyser: AnalyserNode;
   stop: () => void;
+  /** temporarily mute the microphone so nothing is transcribed until resumed */
+  setPaused: (paused: boolean) => void;
 }
 
 export function describeMicError(e: unknown): string {
@@ -185,6 +188,23 @@ export async function startVoice(
     };
   };
 
+  let paused = false;
+  const setPaused = (p: boolean) => {
+    if (paused === p || stopped) return;
+    paused = p;
+    // a disabled track sends silence, so Deepgram transcribes nothing
+    stream.getAudioTracks().forEach((t) => (t.enabled = !p));
+    if (recorder) {
+      try {
+        if (p && recorder.state === "recording") recorder.pause();
+        if (!p && recorder.state === "paused") recorder.resume();
+      } catch {
+        /* ignore */
+      }
+    }
+    if (p) h.onSpeech(false);
+  };
+
   connect();
-  return { analyser, stop: shutdown };
+  return { analyser, stop: shutdown, setPaused };
 }

@@ -67,13 +67,26 @@ function getDb(): Promise<Database> {
       } catch {
         /* column already exists */
       }
+      try {
+        // archived docs leave the input box but stay a source for their chat
+        await db.execute(
+          "ALTER TABLE docs ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"
+        );
+      } catch {
+        /* column already exists */
+      }
+      try {
+        await db.execute("ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+      } catch {
+        /* column already exists */
+      }
       return db;
     })();
   }
   return dbPromise;
 }
 
-type SessionRow = { id: string; title: string };
+type SessionRow = { id: string; title: string; pinned: number };
 type MessageRow = {
   id: string;
   session_id: string;
@@ -83,7 +96,13 @@ type MessageRow = {
   refs: string | null;
 };
 
-type DocRow = { id: string; session_id: string; name: string; path: string };
+type DocRow = {
+  id: string;
+  session_id: string;
+  name: string;
+  path: string;
+  archived: number;
+};
 
 const parseRefs = (raw: string | null): Ref[] | undefined => {
   if (!raw) return undefined;
@@ -98,18 +117,19 @@ const parseRefs = (raw: string | null): Ref[] | undefined => {
 async function loadSessions(): Promise<Session[]> {
   const db = await getDb();
   const sessions = await db.select<SessionRow[]>(
-    "SELECT id, title FROM sessions ORDER BY created_at DESC"
+    "SELECT id, title, pinned FROM sessions ORDER BY created_at DESC"
   );
   const messages = await db.select<MessageRow[]>(
     "SELECT id, session_id, role, text, source, refs FROM messages ORDER BY created_at, rowid"
   );
   const docs = await db.select<DocRow[]>(
-    "SELECT id, session_id, name, path FROM docs ORDER BY created_at, rowid"
+    "SELECT id, session_id, name, path, archived FROM docs ORDER BY created_at, rowid"
   );
 
   return sessions.map((s) => ({
     id: s.id,
     title: s.title,
+    pinned: s.pinned === 1,
     messages: messages
       .filter((m) => m.session_id === s.id)
       .map((m) => ({
@@ -121,7 +141,7 @@ async function loadSessions(): Promise<Session[]> {
       })),
     docs: docs
       .filter((d) => d.session_id === s.id)
-      .map((d) => ({ id: d.id, name: d.name, path: d.path })),
+      .map((d) => ({ id: d.id, name: d.name, path: d.path, archived: d.archived === 1 })),
   }));
 }
 
@@ -161,6 +181,11 @@ export async function updateTitle(id: string, title: string) {
   await db.execute("UPDATE sessions SET title = $1 WHERE id = $2", [title, id]);
 }
 
+export async function setPinned(id: string, pinned: boolean) {
+  const db = await getDb();
+  await db.execute("UPDATE sessions SET pinned = $1 WHERE id = $2", [pinned ? 1 : 0, id]);
+}
+
 export async function deleteSession(id: string) {
   const db = await getDb();
   await db.execute("DELETE FROM chunks WHERE session_id = $1", [id]);
@@ -191,6 +216,18 @@ export async function deleteDoc(id: string) {
   const db = await getDb();
   await db.execute("DELETE FROM chunks WHERE doc_id = $1", [id]);
   await db.execute("DELETE FROM docs WHERE id = $1", [id]);
+}
+
+/** Remove a document from the input box; its text stays a source for the chat. */
+export async function archiveDoc(id: string) {
+  const db = await getDb();
+  await db.execute("UPDATE docs SET archived = 1 WHERE id = $1", [id]);
+}
+
+/** Attach an archived document to the input box again. */
+export async function restoreDoc(id: string) {
+  const db = await getDb();
+  await db.execute("UPDATE docs SET archived = 0 WHERE id = $1", [id]);
 }
 
 /** Save a document and its text chunks. Removes everything again if something fails. */

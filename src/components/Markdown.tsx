@@ -1,4 +1,4 @@
-import { memo, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
@@ -40,13 +40,60 @@ const components: Components = {
       {children}
     </a>
   ),
-  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+  pre: ({ children }) => {
+    const code = Array.isArray(children) ? children[0] : children;
+    const cls = String((code as any)?.props?.className ?? "");
+    const body = String((code as any)?.props?.children ?? "");
+    if (cls.includes("language-mermaid") && body.trim()) {
+      return <Mermaid code={body} />;
+    }
+    return <CodeBlock>{children}</CodeBlock>;
+  },
   table: ({ children }) => (
     <div className="table-wrap">
       <table>{children}</table>
     </div>
   ),
 };
+
+/** ```mermaid fences render as a picture; the library loads only when one appears. */
+function Mermaid({ code }: { code: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let dead = false;
+    (async () => {
+      try {
+        const { default: mermaid } = await import("mermaid");
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: document.documentElement.classList.contains("dark")
+            ? "dark"
+            : "neutral",
+          fontFamily: "Inter, system-ui, sans-serif",
+        });
+        const id = `mmd-${Math.random().toString(36).slice(2, 9)}`;
+        const { svg } = await mermaid.render(id, code);
+        if (!dead && ref.current) ref.current.innerHTML = svg;
+      } catch {
+        if (!dead) setFailed(true);
+      }
+    })();
+    return () => {
+      dead = true;
+    };
+  }, [code]);
+
+  if (failed) {
+    return (
+      <CodeBlock>
+        <code>{code}</code>
+      </CodeBlock>
+    );
+  }
+  return <div className="mermaid-wrap" ref={ref} />;
+}
 
 function MarkdownBase({ text }: { text: string }) {
   return (

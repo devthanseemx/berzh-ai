@@ -29,12 +29,12 @@ export default function SourcesPanel({ docs, onUpload, onRemove }: Props) {
   };
 
   return (
-    <aside className="w-72 shrink-0 bg-panel border-l border-line flex flex-col">
-      <div className="h-12 px-4 flex items-center border-b border-line font-semibold">
-        Sources
+    <aside className="w-72 shrink-0 bg-panel flex flex-col">
+      <div className="px-3 pt-3 pb-1 flex items-center gap-1.5 text-xs font-medium text-muted uppercase tracking-wide shrink-0">
+        <FileText size={12} /> Sources
       </div>
 
-      <div className="p-3">
+      <div className="px-3 pb-3">
         <input
           ref={inputRef}
           type="file"
@@ -46,7 +46,7 @@ export default function SourcesPanel({ docs, onUpload, onRemove }: Props) {
         <button
           onClick={() => inputRef.current?.click()}
           disabled={loading}
-          className="w-full h-10 px-3 flex items-center gap-2 border border-line rounded-xl hover:bg-bg disabled:opacity-60"
+          className="w-full h-10 px-3 flex items-center gap-2 border border-line rounded-md hover:bg-bg disabled:opacity-60"
         >
           {loading ? (
             <Loader2 size={16} className="animate-spin" />
@@ -70,7 +70,7 @@ export default function SourcesPanel({ docs, onUpload, onRemove }: Props) {
           docs.map((d) => (
             <div
               key={d.id}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-bg"
+              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-bg"
             >
               <FileText size={16} className="shrink-0 text-muted" />
               <span className="flex-1 truncate" title={d.name}>

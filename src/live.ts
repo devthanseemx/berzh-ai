@@ -28,7 +28,9 @@ export function startDraft(
   session: Session,
   typed: string,
   onChange?: () => void,
-  hit?: DocHit | null
+  hit?: DocHit | null,
+  web?: string, // results of a live web search
+  webFailed?: boolean // a search was needed but gave nothing
 ): Draft {
   const draft: Draft = {
     sessionId: session.id,
@@ -81,7 +83,7 @@ export function startDraft(
       notify();
     },
     draft.controller.signal,
-    { live: true, maxTurns: 4, context: hit?.context }
+    { live: true, maxTurns: 4, context: hit?.context, web, webFailed }
   )
     .then(() => {
       parse(true);

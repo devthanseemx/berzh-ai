@@ -93,6 +93,10 @@ function buildSystemPrompt(
       "say that you could not check it right now instead of guessing."
     );
   }
+  parts.push(
+    "When a visual helps (a flow, structure, process, or relationship), you may answer with a ```mermaid fenced code block - it is rendered as a picture. " +
+      "Use tables or bullet lists when they fit the question better than prose."
+  );
   if (s.answerAsMe) parts.push(AS_ME_RULES);
   if (s.humanTone) parts.push(HUMAN_RULES);
   const ins = s.instructions.trim();
@@ -154,11 +158,11 @@ async function* sseData(res: Response): AsyncGenerator<string> {
   if (rest) yield rest;
 }
 
-function friendlyError(e: unknown, models: string[]): Error {
+function friendlyError(e: unknown, models: string[], who: string): Error {
   if (e instanceof HttpError && (e.status === 0 || e.status === 429 || e.status >= 500)) {
     const what = e.status === 0 ? "no response in time" : `HTTP ${e.status}`;
     return new Error(
-      `OmniRoute is busy or not responding right now (${what}). Tried: ${models.join(", ")}. Please try again in a moment.`
+      `${who} is busy or not responding right now (${what}). Tried: ${models.join(", ")}. Please try again in a moment.`
     );
   }
   return e instanceof Error ? e : new Error(String(e));
@@ -170,7 +174,8 @@ async function withFallback(
   run: (model: string, emit: (t: string) => void) => Promise<void>,
   onToken: (t: string) => void,
   signal: AbortSignal,
-  attempts: number
+  attempts: number,
+  who = "OmniRoute"
 ) {
   let started = false;
   const emit = (t: string) => {
@@ -195,7 +200,7 @@ async function withFallback(
       }
     }
   }
-  throw friendlyError(lastErr, models);
+  throw friendlyError(lastErr, models, who);
 }
 
 const uniqueModels = (...list: string[]) =>
@@ -306,6 +311,97 @@ async function omniOnce(
   }
 }
 
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
+
+async function geminiOnce(
+  s: Settings,
+  model: string,
+  system: string,
+  turns: Turn[],
+  emit: (t: string) => void,
+  signal: AbortSignal,
+  timeoutMs: number
+) {
+  if (signal.aborted) throw abortError();
+
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  signal.addEventListener("abort", onAbort);
+
+  let timedOut = false;
+  let gotContent = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    let res: Response;
+    try {
+      res = await fetch(
+        `${GEMINI_BASE}/models/${model}:streamGenerateContent?alt=sse`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": s.geminiKey.trim(),
+          },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: system }] },
+            contents: turns.map((t) => ({
+              role: t.role === "assistant" ? "model" : "user",
+              parts: [{ text: t.text }],
+            })),
+          }),
+          signal: controller.signal,
+        }
+      );
+    } catch (e) {
+      if (timedOut || signal.aborted) throw e;
+      throw new FatalError("Could not reach the Gemini API. Check your internet connection.");
+    }
+    await failIfBad(res).catch((e) => {
+      // Google reports a bad key as HTTP 400, not 401
+      if (
+        e instanceof HttpError &&
+        (e.status === 400 || e.status === 403) &&
+        /api key/i.test(e.message)
+      ) {
+        throw new ConfigError("Invalid Gemini API key. Check it in Settings.");
+      }
+      throw e;
+    });
+
+    for await (const data of sseData(res)) {
+      let json: any;
+      try {
+        json = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      if (json.error) throw new Error(json.error.message ?? "Gemini error");
+
+      const parts = json.candidates?.[0]?.content?.parts;
+      if (!Array.isArray(parts)) continue;
+      const text = parts
+        .map((p: any) => (typeof p?.text === "string" ? p.text : ""))
+        .join("");
+      if (text) {
+        gotContent = true;
+        clearTimeout(timer);
+        emit(text);
+      }
+    }
+    if (!gotContent) throw new Error("The model returned an empty reply.");
+  } catch (e) {
+    if (timedOut && !signal.aborted) throw new HttpError(0, "timed out");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
 export async function streamChat(
   settings: Settings,
   history: Message[],
@@ -314,6 +410,36 @@ export async function streamChat(
   opts: ChatOptions = {}
 ): Promise<void> {
   const live = !!opts.live;
+
+  // Gemini answers over the API - no local server needed, one provider at a time
+  if (settings.llmProvider === "gemini") {
+    if (!settings.geminiKey.trim()) {
+      throw new ConfigError(
+        "Add your Gemini API key in Settings (Models page), or switch back to OmniRoute."
+      );
+    }
+    const geminiModels = live
+      ? uniqueModels(settings.geminiLiveModel || settings.geminiModel)
+      : uniqueModels(settings.geminiModel);
+    if (geminiModels.length === 0) {
+      throw new ConfigError("Choose a Gemini model in Settings (Models page).");
+    }
+
+    const geminiTurns = buildTurns(history, opts.maxTurns ?? 20);
+    const geminiSystem =
+      opts.system ?? buildSystemPrompt(settings, opts.context, opts.web, opts.webFailed);
+
+    await withFallback(
+      geminiModels,
+      (model, emit) =>
+        geminiOnce(settings, model, geminiSystem, geminiTurns, emit, signal, live ? LIVE_TIMEOUT_MS : ANSWER_TIMEOUT_MS),
+      onToken,
+      signal,
+      live ? 1 : 2,
+      "Gemini"
+    );
+    return;
+  }
 
   if (!omniBase(settings)) throw new ConfigError("Set the OmniRoute base URL in Settings.");
 

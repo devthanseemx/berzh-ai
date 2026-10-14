@@ -4,11 +4,14 @@ export interface Doc {
   id: string;
   name: string;
   path: string;
+  /** removed from the input box but kept as a source for this chat */
+  archived?: boolean;
 }
 
 export interface Session {
   id: string;
   title: string;
+  pinned?: boolean;
   messages: Message[];
   docs: Doc[];
 }
@@ -16,7 +19,8 @@ export interface Session {
 
 export interface Ref {
   title: string;
-  url: string;
+  url: string; // "" for document sources
+  kind?: "web" | "doc"; // default "web"
 }
 
 export interface Message {
@@ -38,5 +42,7 @@ export interface Preview {
   error: boolean;
   stale: boolean;
   docs: boolean; // the draft is using uploaded documents
-  web: boolean; // this question needs a web search (done on Enter)
+  web: boolean; // a web search for this question is running right now
+  /** the automatic web search failed: key missing/invalid or limit reached */
+  webFailed?: boolean;
 }

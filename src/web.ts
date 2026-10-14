@@ -7,20 +7,31 @@ export interface WebHit {
   refs: Ref[]; // links shown under the answer
 }
 
+export interface WebOptions {
+  /** Tavily topic: general, news, or finance */
+  topic: "general" | "news" | "finance";
+}
+
+const auth = (apiKey: string) => ({
+  "Content-Type": "application/json",
+  Authorization: `Bearer ${apiKey.trim()}`,
+});
+
 export async function searchWeb(
   apiKey: string,
   query: string,
+  opts: WebOptions,
   signal: AbortSignal
 ): Promise<WebHit | null> {
   const res = await fetch("https://api.tavily.com/search", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey.trim()}`,
-    },
+    headers: auth(apiKey),
     body: JSON.stringify({
       query: query.slice(0, 380),
-      search_depth: "fast", // 1 credit, low latency (use "basic" for fuller snippets)
+      // always "basic": exactly 1 Tavily credit per search (advanced costs 2,
+      // the Research API costs 4-110 - far too much for a chat question)
+      search_depth: "basic",
+      topic: opts.topic,
       max_results: 5,
     }),
     signal,

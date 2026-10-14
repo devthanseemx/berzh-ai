@@ -1,5 +1,4 @@
-import { Check, Loader2, Minus, X } from "lucide-react";
-import VoiceBlob from "./VoiceBlob";
+import logo from "../assets/logo.svg";
 
 export type StepState = "pending" | "active" | "done" | "skipped" | "failed";
 
@@ -9,76 +8,26 @@ export interface Step {
   state: StepState;
 }
 
-function StepIcon({ state }: { state: StepState }) {
-  switch (state) {
-    case "active":
-      return <Loader2 size={16} className="animate-spin text-accent" />;
-    case "done":
-      return <Check size={16} className="text-green-600" />;
-    case "failed":
-      return <X size={16} className="text-red-600" />;
-    case "skipped":
-      return <Minus size={16} className="text-muted" />;
-    default:
-      return <span className="h-3 w-3 rounded-full border border-line" />;
-  }
-}
-
-interface Props {
-  steps: Step[];
-  error: string | null;
-  onRetry: () => void;
-  onContinue: () => void;
-}
-
-export default function Splash({ steps, error, onRetry, onContinue }: Props) {
+/** Shown while the app starts. Never blocks: a failed step is reported as a
+ * toast after the home screen appears, and the loading always continues. */
+export default function Splash() {
   return (
-    <div className="h-screen bg-white flex flex-col items-center justify-center px-6">
-      <div className="scale-90">
-        <VoiceBlob analyser={null} hearing={false} />
+    <div
+      data-tauri-drag-region
+      className="h-screen flex flex-col items-center justify-center px-6 bg-gradient-to-b from-panel to-bg"
+    >
+      {/* the logo sits on a small tile so it reads in both themes */}
+      <div
+        data-tauri-drag-region
+        className="p-3.5 rounded-2xl bg-white shadow-lg shadow-black/10 ring-1 ring-black/5"
+      >
+        <img src={logo} alt="Berzh AI" className="h-16 w-16" draggable={false} />
       </div>
-      <h1 className="mt-2 text-2xl font-semibold">Berzh AI</h1>
-      <p className="mt-1 text-sm text-muted">
-        {error ? "Something needs your attention" : "Starting up..."}
-      </p>
+      <h1 data-tauri-drag-region className="mt-5 text-lg font-semibold tracking-tight">
+        Berzh AI
+      </h1>
 
-      <ul className="mt-6 w-72 space-y-2.5">
-        {steps.map((s) => (
-          <li
-            key={s.id}
-            className={`flex items-center gap-3 text-sm ${
-              s.state === "pending" ? "text-muted" : "text-ink"
-            }`}
-          >
-            <span className="w-4 flex justify-center">
-              <StepIcon state={s.state} />
-            </span>
-            {s.label}
-          </li>
-        ))}
-      </ul>
-
-      {error && (
-        <div className="mt-6 w-110 max-w-full rounded-2xl border border-red-200 bg-red-50 px-5 py-4">
-          <p className="text-sm text-red-700 whitespace-pre-wrap wrap-break-word max-h-40 overflow-y-auto">
-            {error}
-          </p>
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={onRetry}
-              className="h-9 px-4 rounded-xl bg-red-600 text-white hover:opacity-90"
-            >
-              Retry
-            </button>
-            <button
-              onClick={onContinue}
-              className="h-9 px-4 rounded-xl border border-red-200 hover:bg-white"
-            >
-              Continue anyway
-            </button>
-          </div>
-        </div>
-      )}
+      <div className="mt-6 splash-bar" aria-label="Starting" />
     </div>
   );
 }

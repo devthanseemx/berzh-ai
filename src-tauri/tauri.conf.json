@@ -16,7 +16,10 @@
         "width": 1200,
         "height": 780,
         "minWidth": 900,
-        "minHeight": 600
+        "minHeight": 600,
+      "decorations": false,
+      "shadow": true,
+      "center": true
       }
     ],
     "security": {
@@ -29,6 +32,9 @@
       "nsis"
     ],
     "createUpdaterArtifacts": true,
+    "resources": [
+      "icons/icon.ico"
+    ],
     "licenseFile": "license.txt",
     "windows": {
       "nsis": {
