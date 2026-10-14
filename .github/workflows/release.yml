@@ -18,6 +18,17 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
       - run: npm ci
+
+      - name: Set app version from the tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: >
+          node -e "const fs=require('fs');const f='src-tauri/tauri.conf.json';
+          const j=JSON.parse(fs.readFileSync(f,'utf8'));
+          j.version=process.env.TAG.replace(/^v/,'');
+          fs.writeFileSync(f,JSON.stringify(j,null,2));
+          console.log('Building version',j.version);"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
