@@ -4,6 +4,7 @@ import type { Update } from "@tauri-apps/plugin-updater";
 import RecentsPanel, { ActivityRail } from "./components/Sidebar";
 import { ArrowLeft, ArrowRight, Minus, PanelLeftClose, PanelLeftOpen, Square, X, type LucideIcon } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
 import ChatView from "./components/ChatView";
 import SettingsDialog, { type SettingsTab } from "./components/SettingsDialog";
 import { Toaster, toast } from "sonner";
@@ -179,10 +180,11 @@ export default function App() {
   const typingTimer = useRef<number | undefined>(undefined);
   const lastTyped = useRef("");
   const voiceRef = useRef<VoiceSession | null>(null);
+  const dictSessionRef = useRef<VoiceSession | null>(null);
   const voiceGen = useRef(0);
-  const dictRef = useRef<VoiceSession | null>(null);
-  const dictGen = useRef(0);
-  const dictCommit = useRef(""); // finished sentences of the running voice typing
+  const dictCommit = useRef(""); // finished phrases of the running voice typing
+  const dictOnRef = useRef(false); // voice typing is active
+  const dictStopping = useRef(false);
 
   // Always-fresh copies for timers and callbacks
   const sessionsRef = useRef<Session[]>([]);
@@ -262,8 +264,8 @@ export default function App() {
       void runBoot(false);
     }
     return () => {
-      voiceRef.current?.stop(); // release the microphone
-      dictRef.current?.stop();
+      void voiceRef.current?.stop().catch((e) => console.error("Could not stop voice session:", e));
+      void dictSessionRef.current?.stop().catch((e) => console.error("Could not stop dictation:", e));
     };
   }, []);
 
@@ -332,7 +334,7 @@ export default function App() {
     if (!update) return;
     setUpd((u) => ({ ...u, status: "downloading", progress: 0, error: undefined }));
     try {
-      voiceRef.current?.stop(); // release the microphone before restarting
+      void voiceRef.current?.stop().catch((e) => console.error("Could not stop voice session:", e));
       await installUpdate(update, (p) =>
         setUpd((u) => ({ ...u, status: "downloading", progress: p ?? undefined }))
       );
@@ -736,6 +738,13 @@ export default function App() {
   const send = async (text: string) => {
     if (!active || controllers.current.has(active.id)) return;
 
+    if (dictOnRef.current) {
+      dictOnRef.current = false;
+      dictStopping.current = false;
+      void dictSessionRef.current?.stop().catch((e) => toast.error(String(e)));
+      dictSessionRef.current = null;
+      setDictating(false);
+    }
     window.clearTimeout(typingTimer.current);
     lastTyped.current = "";
     // whatever was voice-typed is now a sent message: the next dictated
@@ -957,6 +966,7 @@ export default function App() {
         {
           onStatus: (phase) => setVoice((v) => (v ? { ...v, phase, error: "" } : v)),
           onSpeech: (hearing) => setVoice((v) => (v ? { ...v, hearing } : v)),
+          onUtteranceStart: () => {},
           onTranscript: (text) => {
             setVoice((v) => (v ? { ...v, transcript: text } : v));
             onTypingRef.current(text, VOICE_DELAY);
@@ -970,7 +980,7 @@ export default function App() {
       );
 
       if (gen !== voiceGen.current) {
-        session.stop(); // stopped while the microphone was starting
+        void session.stop().catch((e) => console.error("Could not stop voice session:", e));
         return;
       }
       voiceRef.current = session;
@@ -990,7 +1000,7 @@ export default function App() {
 
   const stopVoiceMode = () => {
     voiceGen.current++;
-    voiceRef.current?.stop();
+    void voiceRef.current?.stop().catch((e) => console.error("Could not stop voice session:", e));
     voiceRef.current = null;
     setAnalyser(null);
     setVoice(null);
@@ -1021,7 +1031,7 @@ export default function App() {
   // Stop ends the listening session but keeps voice mode open, ready to Start again
   const endVoiceListening = () => {
     voiceGen.current++;
-    voiceRef.current?.stop();
+    void voiceRef.current?.stop().catch((e) => console.error("Could not stop voice session:", e));
     voiceRef.current = null;
     setAnalyser(null);
     setVoicePaused(false);
@@ -1032,27 +1042,48 @@ export default function App() {
     discardDraft();
   };
 
-  const stopDictation = () => {
-    dictGen.current++;
-    dictRef.current?.stop();
-    dictRef.current = null;
+  const finishDictation = () => {
+    dictOnRef.current = false;
+    dictSessionRef.current = null;
     setDictating(false);
   };
 
-  // the mic in the text box types what you say - it does not open voice mode
+  const stopDictation = () => {
+    if (!dictOnRef.current || dictStopping.current) return;
+    const session = dictSessionRef.current;
+    if (!session) {
+      finishDictation();
+      return;
+    }
+
+    dictStopping.current = true;
+    setDictating(false);
+    void session
+      .stop()
+      .catch((e) => toast.error(e instanceof Error ? e.message : String(e)))
+      .finally(() => {
+        dictStopping.current = false;
+        finishDictation();
+      });
+  };
+
+  // Reuse Deepgram streaming from voice mode, but leave the transcribed text
+  // in the composer for the user to review and send.
   const toggleDictation = async () => {
-    if (dictRef.current) {
+    if (dictOnRef.current) {
       stopDictation();
       return;
     }
     const cfg = settingsRef.current;
     if (!cfg.deepgramKey.trim()) {
-      toast.error("Add your Deepgram API key in Settings to use voice typing.");
-      setSettingsTab("search");
+      setSettingsTab("connection");
       setSettingsOpen(true);
+      toast.error("Add your Deepgram API key in Settings > Connection > Voice listening.");
       return;
     }
-    const gen = ++dictGen.current;
+
+    dictOnRef.current = true;
+    dictStopping.current = false;
     dictCommit.current = "";
     setDictText("");
     setDictating(true);
@@ -1062,35 +1093,37 @@ export default function App() {
         {
           onStatus: () => {},
           onSpeech: () => {},
-          onTranscript: (t) => {
-            // the sentence being spoken continues after what was already dictated
-            if (gen === dictGen.current) {
-              setDictText(dictCommit.current ? `${dictCommit.current}${t}` : t);
+          onUtteranceStart: () => {},
+          onTranscript: (text) => {
+            if (dictOnRef.current) {
+              setDictText(dictCommit.current ? `${dictCommit.current} ${text}` : text);
             }
           },
-          onUtteranceEnd: (t) => {
-            // keep the finished sentence - a pause no longer erases it
-            if (gen === dictGen.current && t) {
-              dictCommit.current += `${t} `;
+          onUtteranceEnd: (text) => {
+            if (dictOnRef.current && text) {
+              dictCommit.current = dictCommit.current
+                ? `${dictCommit.current} ${text}`
+                : text;
               setDictText(dictCommit.current);
             }
           },
-          onError: (msg) => {
-            if (gen === dictGen.current) {
-              stopDictation();
-              toast.error(msg);
+          onError: (message) => {
+            if (dictOnRef.current) {
+              finishDictation();
+              dictStopping.current = false;
+              toast.error(message);
             }
           },
         }
       );
-      if (gen !== dictGen.current) {
-        session.stop();
-        return;
+      if (dictOnRef.current) {
+        dictSessionRef.current = session;
+      } else {
+        void session.stop().catch((e) => console.error("Could not stop dictation:", e));
       }
-      dictRef.current = session;
     } catch (e) {
-      if (gen !== dictGen.current) return;
-      setDictating(false);
+      if (!dictOnRef.current) return;
+      finishDictation();
       toast.error(describeMicError(e));
     }
   };
@@ -1229,6 +1262,15 @@ export default function App() {
             if (active.messages.length > 0) addSession(); // voice always starts a fresh chat
             void startVoiceMode();
           }
+        }}
+        onOpenOverlay={() => {
+          setSettingsOpen(false);
+          // opens the floating popup and minimizes this window (Rust side)
+          void invoke("open_overlay").catch((e) =>
+            toast.error("Could not open the quick assistant", {
+              description: e instanceof Error ? e.message : String(e),
+            })
+          );
         }}
         updateAvailable={updateAvailable}
         settingsOpen={settingsOpen}

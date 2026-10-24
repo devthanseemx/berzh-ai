@@ -247,3 +247,12 @@ textarea::-webkit-scrollbar-thumb {
   background: var(--color-line);
   border-radius: 3px;
 }
+
+/* the floating quick-assistant window paints no page background: the native
+   window is transparent and the whole glass look (translucent gradient +
+   backdrop-blur panel) is drawn by the component itself */
+html.overlay-window,
+html.overlay-window body,
+html.overlay-window #root {
+  background: transparent !important;
+}

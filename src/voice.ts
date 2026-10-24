@@ -13,6 +13,7 @@ export interface VoiceState {
 export interface VoiceHandlers {
   onStatus: (s: VoiceStatus) => void;
   onSpeech: (hearing: boolean) => void;
+  onUtteranceStart: () => void;
   onTranscript: (text: string) => void;
   onUtteranceEnd: (text: string) => void;
   onError: (message: string) => void;
@@ -20,7 +21,7 @@ export interface VoiceHandlers {
 
 export interface VoiceSession {
   analyser: AnalyserNode;
-  stop: () => void;
+  stop: () => Promise<void>;
   /** temporarily mute the microphone so nothing is transcribed until resumed */
   setPaused: (paused: boolean) => void;
 }
@@ -47,22 +48,41 @@ export async function startVoice(
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   });
 
-  const ctx = new AudioContext();
-  if (ctx.state === "suspended") await ctx.resume().catch(() => {});
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 512;
-  ctx.createMediaStreamSource(stream).connect(analyser);
+  let ctx: AudioContext;
+  let analyser: AnalyserNode;
+  try {
+    ctx = new AudioContext();
+    if (ctx.state === "suspended") await ctx.resume();
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    ctx.createMediaStreamSource(stream).connect(analyser);
+  } catch (e) {
+    stream.getTracks().forEach((track) => track.stop());
+    throw e;
+  }
 
   let stopped = false;
   let socket: WebSocket | null = null;
   let recorder: MediaRecorder | null = null;
+  let shutdownPromise: Promise<void> | null = null;
   let keepAlive: number | undefined;
   let retries = 0;
   let everOpened = false;
   let finals: string[] = [];
   let interim = "";
+  let lastUtterance = "";
 
   const current = () => [...finals, interim].filter(Boolean).join(" ").trim();
+  const finishUtterance = (fallback = "") => {
+    const text = current() || fallback.trim();
+    finals = [];
+    interim = "";
+    h.onSpeech(false);
+    if (!text || text === lastUtterance) return;
+    lastUtterance = text;
+    h.onTranscript(text);
+    h.onUtteranceEnd(text);
+  };
 
   const stopRecorder = () => {
     if (recorder && recorder.state !== "inactive") {
@@ -76,20 +96,48 @@ export async function startVoice(
   };
 
   const shutdown = () => {
-    if (stopped) return;
+    if (shutdownPromise) return shutdownPromise;
     stopped = true;
     window.clearInterval(keepAlive);
-    stopRecorder();
-    try {
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: "CloseStream" }));
+    const ws = socket;
+    shutdownPromise = new Promise<void>((resolve) => {
+      const closeSocket = () => {
+        try {
+          if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "CloseStream" }));
+            window.setTimeout(() => {
+              ws.close();
+              resolve();
+            }, 1000);
+          } else {
+            ws?.close();
+            resolve();
+          }
+        } catch {
+          ws?.close();
+          resolve();
+        }
+        stream.getTracks().forEach((t) => t.stop());
+        void ctx.close().catch((e) => {
+          console.warn("Could not close the microphone audio context:", e);
+        });
+      };
+
+      if (recorder && recorder.state !== "inactive") {
+        const activeRecorder = recorder;
+        recorder = null;
+        activeRecorder.addEventListener("stop", closeSocket, { once: true });
+        try {
+          activeRecorder.stop();
+        } catch {
+          closeSocket();
+        }
+      } else {
+        stopRecorder();
+        closeSocket();
       }
-      socket?.close();
-    } catch {
-      /* ignore */
-    }
-    stream.getTracks().forEach((t) => t.stop());
-    ctx.close().catch(() => {});
+    });
+    return shutdownPromise;
   };
 
   const connect = () => {
@@ -104,33 +152,53 @@ export async function startVoice(
       utterance_end_ms: "1000",
       vad_events: "true",
     });
-    const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params}`, [
-      "token",
-      opts.apiKey.trim(),
-    ]);
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params}`, [
+        "token",
+        opts.apiKey.trim(),
+      ]);
+    } catch (e) {
+      h.onError(`Could not connect to Deepgram: ${describeMicError(e)}`);
+      void shutdown();
+      return;
+    }
     socket = ws;
 
     ws.onopen = () => {
       everOpened = true;
       retries = 0;
-      h.onStatus("listening");
+      try {
+        const mime = [
+          "audio/webm;codecs=opus",
+          "audio/ogg;codecs=opus",
+          "audio/mp4",
+        ].find((candidate) => MediaRecorder.isTypeSupported(candidate));
+        const rec = mime
+          ? new MediaRecorder(stream, { mimeType: mime })
+          : new MediaRecorder(stream);
+        recorder = rec;
+        rec.ondataavailable = (e) => {
+          if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(e.data);
+        };
+        rec.onerror = () => {
+          if (stopped) return;
+          h.onError("The microphone could not record audio. Check microphone permissions and try again.");
+          void shutdown();
+        };
+        rec.start(250);
+        h.onStatus("listening");
 
-      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
-      const rec = new MediaRecorder(stream, { mimeType: mime });
-      recorder = rec;
-      rec.ondataavailable = (e) => {
-        if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(e.data);
-      };
-      rec.start(250);
-
-      window.clearInterval(keepAlive);
-      keepAlive = window.setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "KeepAlive" }));
-        }
-      }, 5000);
+        window.clearInterval(keepAlive);
+        keepAlive = window.setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "KeepAlive" }));
+          }
+        }, 5000);
+      } catch (e) {
+        h.onError(`Could not start microphone recording: ${describeMicError(e)}`);
+        void shutdown();
+      }
     };
 
     ws.onmessage = (ev) => {
@@ -155,18 +223,20 @@ export async function startVoice(
           h.onSpeech(true);
           h.onTranscript(now);
         }
+        if (msg.speech_final) finishUtterance(text);
+      } else if (msg.type === "SpeechFinal") {
+        const text: string = msg.channel?.alternatives?.[0]?.transcript ?? "";
+        finishUtterance(text);
       } else if (msg.type === "SpeechStarted") {
+        lastUtterance = "";
         h.onSpeech(true);
+        h.onUtteranceStart();
       } else if (msg.type === "UtteranceEnd") {
-        const text = current();
-        finals = [];
-        interim = "";
-        h.onSpeech(false);
-        if (text) h.onUtteranceEnd(text);
+        finishUtterance();
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       window.clearInterval(keepAlive);
       stopRecorder();
       if (stopped) return;
@@ -174,7 +244,10 @@ export async function startVoice(
       retries++;
       if (!everOpened && retries >= 2) {
         shutdown();
-        h.onError("Could not connect to Deepgram. Check your API key and internet connection.");
+        h.onError(
+          `Deepgram closed the connection before starting (code ${event.code}). ` +
+            "Check the API key, Deepgram project access, and internet connection.",
+        );
         return;
       }
       if (retries > 6) {

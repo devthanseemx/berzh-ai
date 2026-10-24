@@ -49,22 +49,20 @@ export default function Composer({
   centered = false,
 }: Props) {
   const [text, setText] = useState("");
-  const textRef = useRef("");
-  textRef.current = text;
 
-  // Voice typing keeps everything already in the box: text typed or dictated
-  // before the mic went on stays put, and every new sentence is appended
-  // after it instead of replacing it.
-  const dictBase = useRef(""); // text that was in the box when dictation started
+  // Voice typing starts fresh: pressing the mic clears whatever is still in
+  // the box (typed or dictated earlier), and every dictated phrase is written
+  // into the empty box instead of being appended to old text.
   const wasDictating = useRef(false);
   useEffect(() => {
-    if (dictating && !wasDictating.current) dictBase.current = textRef.current.trim();
-    if (!dictating) dictBase.current = "";
+    if (dictating && !wasDictating.current) {
+      setText(""); // a new mic press replaces the old text
+      onTextChange?.("");
+    }
     wasDictating.current = dictating;
-    if (dictating && dictText) {
-      const next = dictBase.current ? `${dictBase.current} ${dictText}` : dictText;
-      setText(next);
-      onTextChange?.(next);
+    if (dictText) {
+      setText(dictText);
+      onTextChange?.(dictText);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dictating, dictText]);
@@ -89,7 +87,6 @@ export default function Composer({
   const send = () => {
     const t = text.trim();
     if (!t || busy) return;
-    dictBase.current = ""; // a dictation that keeps running starts fresh
     onSend(t);
     setText("");
     onTextChange?.("");
@@ -186,7 +183,7 @@ export default function Composer({
           ref={taRef}
           rows={1}
           value={text}
-          placeholder="Ask anything..."
+          placeholder={dictating ? "Listening... speak now" : "Ask anything..."}
           className="flex-1 resize-none outline-none bg-transparent px-2 leading-normal min-h-9 py-1.5"
           onChange={(e) => {
             setText(e.target.value);
@@ -201,7 +198,7 @@ export default function Composer({
         />
         <button
           onClick={onToggleDictation}
-          title={dictating ? "Stop voice typing" : "Voice typing - everything you already wrote stays"}
+          title={dictating ? "Stop voice typing" : "Voice typing - replaces whatever is in the box"}
           aria-pressed={dictating}
           className={`h-9 w-9 flex items-center justify-center rounded-full border transition-colors ${
             dictating

@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Home, Mic, Moon, Pin, Settings, SquarePen, Sun, Trash2, User, type LucideIcon } from "lucide-react";
+import { Home, Mic, Moon, Pin, PictureInPicture2, Settings, SquarePen, Sun, Trash2, User, type LucideIcon } from "lucide-react";
 import type { Session } from "../types";
 
 interface RailProps {
@@ -8,6 +8,7 @@ interface RailProps {
   onOpenAccount: () => void;
   voiceActive: boolean;
   onStartVoice: () => void;
+  onOpenOverlay: () => void;
   updateAvailable: boolean;
   settingsOpen: boolean;
   theme: "light" | "dark";
@@ -60,6 +61,7 @@ export function ActivityRail({
   onOpenSettings,
   onOpenAccount,
   onStartVoice,
+  onOpenOverlay,
   voiceActive,
   updateAvailable,
   settingsOpen,
@@ -76,6 +78,7 @@ export function ActivityRail({
         onClick={onStartVoice}
         active={voiceActive}
       />
+      <RailButton icon={PictureInPicture2} label="Quick assistant" onClick={onOpenOverlay} />
       <RailButton icon={Settings} label="Settings" onClick={onOpenSettings} active={settingsOpen} />
       {updateAvailable && (
         <span
