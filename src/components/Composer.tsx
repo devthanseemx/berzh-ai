@@ -230,13 +230,14 @@ export default function Composer({
         )}
       </div>
 
-      <div className="max-w-3xl mx-auto mt-2 flex items-center gap-2">
+      <div className="max-w-3xl mx-auto mt-2 flex items-center justify-start gap-2">
         <Chip
           active={humanTone}
           label="Human tone"
           title="Answer like a real person, not like an AI"
           icon={<Smile size={14} />}
           onClick={onToggleTone}
+          compact
         />
         <Chip
           active={answerAsMe}
@@ -244,6 +245,7 @@ export default function Composer({
           title="Reply in the first person, as you, using About me"
           icon={<User size={14} />}
           onClick={onToggleAsMe}
+          compact
         />
         <Chip
           active={interviewCoach}
@@ -251,6 +253,7 @@ export default function Composer({
           title="Answer as Thanseem for entry-level IT support interviews"
           icon={<Briefcase size={14} />}
           onClick={onToggleInterviewCoach}
+          compact
         />
         <Chip
           active={webSearch}
@@ -258,6 +261,7 @@ export default function Composer({
           title="Search the web for current questions (needs a Tavily key in Settings)"
           icon={<Globe size={14} />}
           onClick={onToggleWeb}
+          compact
         />
       </div>
     </div>
