@@ -122,12 +122,6 @@ export default function ChatView({
 
   return (
     <section className="relative flex-1 min-w-0 flex flex-col bg-panel">
-      <header className="h-12 px-5 flex items-center shrink-0">
-        {!isEmpty && (
-          <span className="font-medium truncate">{session.title}</span>
-        )}
-      </header>
-
       <div className="flex-1 min-w-0 flex overflow-hidden">
         <div className={`flex-1 min-w-0 flex flex-col overflow-hidden ${isEmpty ? "justify-center" : ""}`}>
           {isEmpty ? (

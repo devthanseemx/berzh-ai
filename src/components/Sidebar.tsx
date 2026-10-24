@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Home, Mic, Moon, Pin, PictureInPicture2, Settings, SquarePen, Sun, Trash2, User, type LucideIcon } from "lucide-react";
+import { Gauge, Home, Mic, Moon, Pin, PictureInPicture2, Settings, SquarePen, Sun, Trash2, User, type LucideIcon } from "lucide-react";
 import type { Session } from "../types";
 
 interface RailProps {
@@ -9,8 +9,10 @@ interface RailProps {
   voiceActive: boolean;
   onStartVoice: () => void;
   onOpenOverlay: () => void;
+  onOpenUsage: () => void;
   updateAvailable: boolean;
   settingsOpen: boolean;
+  usageOpen: boolean;
   theme: "light" | "dark";
   onToggleTheme: () => void;
 }
@@ -62,16 +64,18 @@ export function ActivityRail({
   onOpenAccount,
   onStartVoice,
   onOpenOverlay,
+  onOpenUsage,
   voiceActive,
   updateAvailable,
   settingsOpen,
+  usageOpen,
   theme,
   onToggleTheme,
 }: RailProps) {
   const dark = theme === "dark";
   return (
     <nav className="w-14 shrink-0 my-2 flex flex-col items-center pt-10 pb-2 gap-1">
-      <RailButton icon={Home} label="Home" onClick={onNew} active={!settingsOpen && !voiceActive} />
+      <RailButton icon={Home} label="Home" onClick={onNew} active={!settingsOpen && !usageOpen && !voiceActive} />
       <RailButton
         icon={Mic}
         label={voiceActive ? "Voice mode (listening)" : "Voice mode"}
@@ -79,6 +83,7 @@ export function ActivityRail({
         active={voiceActive}
       />
       <RailButton icon={PictureInPicture2} label="Quick assistant" onClick={onOpenOverlay} />
+      <RailButton icon={Gauge} label="Usage & credits" onClick={onOpenUsage} active={usageOpen} />
       <RailButton icon={Settings} label="Settings" onClick={onOpenSettings} active={settingsOpen} />
       {updateAvailable && (
         <span

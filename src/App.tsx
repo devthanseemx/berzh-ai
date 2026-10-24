@@ -7,6 +7,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import ChatView from "./components/ChatView";
 import SettingsDialog, { type SettingsTab } from "./components/SettingsDialog";
+import UsageDashboard from "./components/UsageDashboard";
 import { Toaster, toast } from "sonner";
 import ConfirmDialog from "./components/ConfirmDialog";
 import UpdateBanner from "./components/UpdateBanner";
@@ -111,6 +112,7 @@ export default function App() {
   const [sourcesOpen, setSourcesOpen] = useState(true);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("connection");
   // bumps on every Profile click so the dialog re-jumps even if the tab prop is unchanged
   const [accountPulse, setAccountPulse] = useState(0);
@@ -1241,14 +1243,17 @@ export default function App() {
         onNew={() => {
           stopVoiceMode();
           setSettingsOpen(false);
+          setUsageOpen(false);
           addSession();
         }}
         onOpenSettings={() => {
           stopVoiceMode();
+          setUsageOpen(false);
           setSettingsOpen((o) => !o);
         }}
         onOpenAccount={() => {
           stopVoiceMode();
+          setUsageOpen(false);
           setSettingsTab("account");
           setAccountPulse((n) => n + 1);
           setSettingsOpen(true);
@@ -1256,6 +1261,7 @@ export default function App() {
         voiceActive={voice !== null && voice.phase !== "error"}
         onStartVoice={() => {
           setSettingsOpen(false);
+          setUsageOpen(false);
           if (voice) {
             stopVoiceMode();
           } else {
@@ -1265,6 +1271,7 @@ export default function App() {
         }}
         onOpenOverlay={() => {
           setSettingsOpen(false);
+          setUsageOpen(false);
           // opens the floating popup and minimizes this window (Rust side)
           void invoke("open_overlay").catch((e) =>
             toast.error("Could not open the quick assistant", {
@@ -1272,13 +1279,19 @@ export default function App() {
             })
           );
         }}
+        onOpenUsage={() => {
+          stopVoiceMode();
+          setSettingsOpen(false);
+          setUsageOpen((open) => !open);
+        }}
         updateAvailable={updateAvailable}
         settingsOpen={settingsOpen}
+        usageOpen={usageOpen}
         theme={settings.theme}
         onToggleTheme={toggleTheme}
       />
       <div className="flex-1 min-w-0 mt-12 mr-2 mb-2 flex rounded-md border border-line bg-panel overflow-hidden">
-      {sourcesOpen && !settingsOpen && !voice && (
+      {sourcesOpen && !settingsOpen && !usageOpen && !voice && (
       <RecentsPanel
         sessions={sessions}
         activeId={active.id}
@@ -1291,7 +1304,16 @@ export default function App() {
       />
       )}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-      {settingsOpen ? (
+      {usageOpen ? (
+        <UsageDashboard
+          settings={settings}
+          onOpenSettings={() => {
+            setUsageOpen(false);
+            setSettingsTab("search");
+            setSettingsOpen(true);
+          }}
+        />
+      ) : settingsOpen ? (
         <SettingsDialog
           inline
           settings={settings}
@@ -1321,6 +1343,14 @@ export default function App() {
             title={sourcesOpen ? "Hide recents" : "Show recents"}
             onClick={() => setSourcesOpen((s) => !s)}
           />
+          {active.messages.length > 0 && (
+            <span
+              className="ml-2 min-w-0 truncate text-sm font-medium text-ink"
+              title={active.title}
+            >
+              {active.title}
+            </span>
+          )}
         </div>
       </div>
       )}

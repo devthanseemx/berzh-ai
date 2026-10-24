@@ -638,6 +638,29 @@ export default function SettingsDialog({ settings, onSave, onClose, version, upd
                     sent to Deepgram only while listening is on.
                   </p>
                 </Field>
+                <Field label="Deepgram management key (optional)">
+                  <input
+                    type="password"
+                    className={inputCls}
+                    value={draft.deepgramManagementKey}
+                    onChange={(e) => set("deepgramManagementKey", e.target.value)}
+                    placeholder="Key with usage and billing read access"
+                  />
+                  <p className="mt-1 text-xs text-muted">
+                    Used only by the Usage dashboard; it does not replace your voice key. Create a project key with usage:read and billing:read permissions.
+                  </p>
+                </Field>
+                <Field label="Deepgram project ID">
+                  <input
+                    className={inputCls}
+                    value={draft.deepgramProjectId}
+                    onChange={(e) => set("deepgramProjectId", e.target.value)}
+                    placeholder="Project ID for the usage dashboard"
+                  />
+                  <p className="mt-1 text-xs text-muted">
+                    Used with the management key to show usage and balances. The Project ID is specific to your Deepgram project.
+                  </p>
+                </Field>
                 <Field label="Spoken language">
                   <Select
                     value={draft.voiceLang}

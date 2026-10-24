@@ -21,6 +21,7 @@
       "identifier": "http:default",
       "allow": [
         { "url": "https://generativelanguage.googleapis.com/*" },
+        { "url": "https://api.deepgram.com/*" },
         { "url": "https://api.tavily.com/*" },
         { "url": "http://localhost:*/*" },
         { "url": "http://127.0.0.1:*/*" }
