@@ -85,7 +85,7 @@ export default function VoiceMode({
   return (
     <div className="absolute inset-0 z-20 bg-panel flex">
       {/* the assistant effect has its own space on the left: centered and responsive */}
-      <div className="relative w-[38%] min-w-[220px] max-w-[430px] shrink-0 flex items-center justify-center bg-bg/40">
+      <div className="relative w-[38%] min-w-55 max-w-107.5 shrink-0 flex items-center justify-center bg-bg/40">
         {/* the divider only spans the height of the visualization */}
         <span
           aria-hidden

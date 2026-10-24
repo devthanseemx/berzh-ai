@@ -217,7 +217,7 @@ export default function ChatView({
 
       {preview && !voice && (
         previewOn ? (
-          <div className="fade-in absolute right-4 top-14 z-10 w-[26rem] max-w-[calc(100%-2rem)]">
+          <div className="fade-in absolute right-4 top-14 z-10 w-104 max-w-[calc(100%-2rem)]">
             <div className="overflow-hidden rounded-2xl border border-line bg-panel shadow-xl shadow-black/10">
               <LivePreview
                 preview={preview}
