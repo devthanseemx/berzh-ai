@@ -12,6 +12,7 @@ export interface Settings {
   liveFallbackModel: string;
   humanTone: boolean;
   answerAsMe: boolean;
+  interviewCoach: boolean;
   webSearch: boolean;
   tavilyKey: string;
   tavilyTopic: "general" | "news" | "finance";
@@ -38,6 +39,7 @@ export const DEFAULT_SETTINGS: Settings = {
   liveFallbackModel: "",
   humanTone: false,
   answerAsMe: false,
+  interviewCoach: false,
   webSearch: true,
   tavilyKey: "",
   tavilyTopic: "general",

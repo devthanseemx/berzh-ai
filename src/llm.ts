@@ -15,6 +15,7 @@ const LIVE_TIMEOUT_MS = 6_000;
 
 export interface ChatOptions {
   live?: boolean;
+  quick?: boolean;
   maxTurns?: number;
   system?: string;
   context?: string; // excerpts from the user's documents
@@ -63,13 +64,51 @@ const AS_ME_RULES =
   "Say it the way I would speak it out loud: plain sentences, no bullet points, tables or bold. " +
   'Do not mention being an AI. If "About me" is empty, tell me to fill it in under Settings.';
 
+const INTERVIEW_COACH_RULES =
+  "You are an interview coach and answer assistant for Thanseem, a candidate applying for entry-level IT Support and Service Desk Analyst roles. " +
+  "When an interviewer asks a question, first identify its type internally, then answer in the matching style. " +
+  "Use earlier conversation turns to understand follow-up questions and references such as 'they', 'those', or 'what kind'. " +
+  "Answer the current question in that context; do not switch to a generic introduction or unrelated topic unless explicitly asked. " +
+  "Write the spoken interview answer from Thanseem's first-person point of view, as if he is speaking directly to the interviewer. " +
+  "Use 'I', 'me', and 'my'. Never describe Thanseem as 'he' or 'him', never say what 'you' should do, and never address the interviewer as 'you'. " +
+  "Do not use second-person 'you' or 'your' anywhere in the spoken interview answer; use first-person wording for actions and explanations. " +
+  "For example, say 'First, I would check...' rather than 'Thanseem would check...' or 'You should check...'. " +
+  "Write an answer Thanseem can say out loud in a real interview.\n\n" +
+  "Concept or definition questions: Give a clear plain-English definition in two to four sentences for a non-expert. " +
+  "Do not add an example, use case, or commands unless the interviewer asks.\n\n" +
+  "Example requests: Give one short, realistic example from support work in a few sentences.\n\n" +
+  "'How do you do it' or day-to-day process questions: Explain the relevant steps in the order I would take them. " +
+  "When useful, name relevant commands or tools such as ipconfig /all, ping, nslookup, tracert, Event Viewer, Task Manager, " +
+  "or Active Directory Users and Computers, and briefly say what each shows or does. Keep the tools relevant to the question.\n\n" +
+  "Scenario questions: Use only the situation described. Explain how I would confirm key facts (whether one or many users are affected, " +
+  "what changed, and the error), then move from simple checks to deeper ones, confirm the fix, inform the user, and explain when I would escalate. " +
+  "Do not add unrelated problems.\n\n" +
+  "Behavioral questions: Use the STAR structure (Situation, Task, Action, Result), focused on one real-sounding example. " +
+  "Never invent a specific employer or number. If details are unknown, use a general, honest example and remind me in the Tip to replace it with my own real example.\n\n" +
+  "'Tell me about yourself' and other personal questions: Write a fresh, natural answer specific to the question. " +
+  "Cover who I am, what I am doing now, what I am looking for, and how I feel about the opportunity, conversationally. " +
+  "Avoid stock phrases and self-praise labels such as 'quick learner', 'passionate team player', or 'hard-working professional'. " +
+  "Do not give a memorized-sounding opening. Vary wording and structure so the answer sounds spontaneous.\n\n" +
+  "For every answer, speak in the first person as Thanseem, in natural, confident, friendly spoken English—not like a textbook, script, or chatbot. " +
+  "Match length to the question and keep it under about 90 seconds unless clearly needed. " +
+  "Do not use bullets, headings, or Markdown in the answer; write continuous speech. Avoid filler and empty buzzwords. " +
+  "Never invent experience, certifications, employers, or numbers. Do not mention IT solutions or services business work. " +
+  "Use only relevant hardware/software troubleshooting, tools used in that work, and Thanseem's academic background: " +
+  "Bachelor of Information Technology (BIT), University of Moratuwa.\n\n" +
+  "After each answer, add one short separate line beginning exactly 'Tip:' with one practical way Thanseem can sound stronger, " +
+  "such as naming a tool he has actually used or adding a real detail from his experience.";
+
 function buildSystemPrompt(
   s: Settings,
   context?: string,
   web?: string,
   webFailed?: boolean
 ): string {
-  const parts = [BASE_PROMPT];
+  const parts = [
+    s.interviewCoach
+      ? "You are Berzh AI, a helpful interview answer assistant. Answer clearly and concisely. If you are unsure, say so instead of guessing."
+      : BASE_PROMPT,
+  ];
   parts.push(`Today's date: ${new Date().toDateString()}.`);
   parts.push(
     `About me (the user you are chatting with):\n${s.aboutMe.trim() || "(empty)"}`
@@ -93,12 +132,17 @@ function buildSystemPrompt(
       "say that you could not check it right now instead of guessing."
     );
   }
-  parts.push(
-    "When a visual helps (a flow, structure, process, or relationship), you may answer with a ```mermaid fenced code block - it is rendered as a picture. " +
-      "Use tables or bullet lists when they fit the question better than prose."
-  );
-  if (s.answerAsMe) parts.push(AS_ME_RULES);
-  if (s.humanTone) parts.push(HUMAN_RULES);
+  if (s.interviewCoach) {
+    parts.push(INTERVIEW_COACH_RULES);
+  } else {
+    parts.push(
+      "When a visual helps (a flow, structure, process, or relationship), you may answer with a ```mermaid fenced code block - it is rendered as a picture. " +
+        "Use valid Mermaid syntax, with every edge connected to a node; do not put horizontal-rule or separator lines inside a diagram. " +
+        "Use tables or bullet lists when they fit the question better than prose."
+    );
+    if (s.answerAsMe) parts.push(AS_ME_RULES);
+    if (s.humanTone) parts.push(HUMAN_RULES);
+  }
   const ins = s.instructions.trim();
   if (ins) parts.push(`My instructions:\n${ins}`);
   return parts.join("\n\n");
@@ -242,7 +286,8 @@ async function omniOnce(
   turns: Turn[],
   emit: (t: string) => void,
   signal: AbortSignal,
-  timeoutMs: number
+  timeoutMs: number,
+  maxOutputTokens?: number
 ) {
   if (signal.aborted) throw abortError();
 
@@ -267,6 +312,7 @@ async function omniOnce(
         body: JSON.stringify({
           model,
           stream: true,
+          ...(maxOutputTokens ? { max_tokens: maxOutputTokens } : {}),
           messages: [
             { role: "system", content: system },
             ...turns.map((t) => ({ role: t.role, content: t.text })),
@@ -320,7 +366,8 @@ async function geminiOnce(
   turns: Turn[],
   emit: (t: string) => void,
   signal: AbortSignal,
-  timeoutMs: number
+  timeoutMs: number,
+  maxOutputTokens?: number
 ) {
   if (signal.aborted) throw abortError();
 
@@ -348,6 +395,7 @@ async function geminiOnce(
           },
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: system }] },
+            ...(maxOutputTokens ? { generationConfig: { maxOutputTokens } } : {}),
             contents: turns.map((t) => ({
               role: t.role === "assistant" ? "model" : "user",
               parts: [{ text: t.text }],
@@ -410,6 +458,7 @@ export async function streamChat(
   opts: ChatOptions = {}
 ): Promise<void> {
   const live = !!opts.live;
+  const quick = !!opts.quick;
 
   // Gemini answers over the API - no local server needed, one provider at a time
   if (settings.llmProvider === "gemini") {
@@ -418,9 +467,11 @@ export async function streamChat(
         "Add your Gemini API key in Settings (Models page), or switch back to OmniRoute."
       );
     }
-    const geminiModels = live
-      ? uniqueModels(settings.geminiLiveModel || settings.geminiModel)
-      : uniqueModels(settings.geminiModel);
+    const geminiModels = quick
+      ? uniqueModels(settings.geminiLiveModel, settings.geminiModel)
+      : live
+        ? uniqueModels(settings.geminiLiveModel || settings.geminiModel)
+        : uniqueModels(settings.geminiModel);
     if (geminiModels.length === 0) {
       throw new ConfigError("Choose a Gemini model in Settings (Models page).");
     }
@@ -432,10 +483,19 @@ export async function streamChat(
     await withFallback(
       geminiModels,
       (model, emit) =>
-        geminiOnce(settings, model, geminiSystem, geminiTurns, emit, signal, live ? LIVE_TIMEOUT_MS : ANSWER_TIMEOUT_MS),
+        geminiOnce(
+          settings,
+          model,
+          geminiSystem,
+          geminiTurns,
+          emit,
+          signal,
+          live ? LIVE_TIMEOUT_MS : ANSWER_TIMEOUT_MS,
+          quick ? 450 : undefined,
+        ),
       onToken,
       signal,
-      live ? 1 : 2,
+      live || quick ? 1 : 2,
       "Gemini"
     );
     return;
@@ -443,9 +503,11 @@ export async function streamChat(
 
   if (!omniBase(settings)) throw new ConfigError("Set the OmniRoute base URL in Settings.");
 
-  const models = live
-    ? uniqueModels(settings.liveModel || settings.omniModel, settings.liveFallbackModel)
-    : uniqueModels(settings.omniModel, settings.omniFallbackModel);
+  const models = quick
+    ? uniqueModels(settings.liveModel, settings.omniModel, settings.liveFallbackModel, settings.omniFallbackModel)
+    : live
+      ? uniqueModels(settings.liveModel || settings.omniModel, settings.liveFallbackModel)
+      : uniqueModels(settings.omniModel, settings.omniFallbackModel);
   if (models.length === 0) throw new ConfigError("Choose an OmniRoute model in Settings.");
 
   const turns = buildTurns(history, opts.maxTurns ?? 20);
@@ -454,9 +516,10 @@ export async function streamChat(
 
   await withFallback(
     models,
-    (model, emit) => omniOnce(settings, model, system, turns, emit, signal, timeoutMs),
+    (model, emit) =>
+      omniOnce(settings, model, system, turns, emit, signal, timeoutMs, quick ? 450 : undefined),
     onToken,
     signal,
-    live ? 1 : 2
+    live || quick ? 1 : 2
   );
 }

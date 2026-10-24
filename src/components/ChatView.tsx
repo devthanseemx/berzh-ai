@@ -27,11 +27,13 @@ interface Props {
   preview: Preview | null;
   humanTone: boolean;
   answerAsMe: boolean;
+  interviewCoach: boolean;
   webSearch: boolean;
   voice: VoiceState | null;
   analyser: AnalyserNode | null;
   onToggleTone: () => void;
   onToggleAsMe: () => void;
+  onToggleInterviewCoach: () => void;
   onToggleWeb: () => void;
   onStopVoice: () => void;
   onRetryVoice: () => void;
@@ -79,11 +81,13 @@ export default function ChatView({
   preview,
   humanTone,
   answerAsMe,
+  interviewCoach,
   webSearch,
   voice,
   analyser,
   onToggleTone,
   onToggleAsMe,
+  onToggleInterviewCoach,
   onToggleWeb,
   onStopVoice,
   onRetryVoice,
@@ -194,9 +198,11 @@ export default function ChatView({
         onTextChange={onTyping}
         humanTone={humanTone}
         answerAsMe={answerAsMe}
+        interviewCoach={interviewCoach}
         webSearch={webSearch}
         onToggleTone={onToggleTone}
         onToggleAsMe={onToggleAsMe}
+        onToggleInterviewCoach={onToggleInterviewCoach}
         onToggleWeb={onToggleWeb}
         dictating={dictating}
         dictText={dictText}
@@ -239,9 +245,11 @@ export default function ChatView({
           last={lastAssistant}
           humanTone={humanTone}
           answerAsMe={answerAsMe}
+          interviewCoach={interviewCoach}
           webSearch={webSearch}
           onToggleTone={onToggleTone}
           onToggleAsMe={onToggleAsMe}
+          onToggleInterviewCoach={onToggleInterviewCoach}
           onToggleWeb={onToggleWeb}
           onStop={onStopVoice}
           onRetry={onRetryVoice}

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent } from "react";
-import { ArrowUp, FileText, Globe, Loader2, Mic, Plus, RotateCcw, Smile, Square, User, X } from "lucide-react";
+import { ArrowUp, Briefcase, FileText, Globe, Loader2, Mic, Plus, RotateCcw, Smile, Square, User, X } from "lucide-react";
 import Chip from "./Chip";
 import type { Doc } from "../types";
 
@@ -10,9 +10,11 @@ interface Props {
   onTextChange?: (text: string) => void;
   humanTone: boolean;
   answerAsMe: boolean;
+  interviewCoach: boolean;
   webSearch: boolean;
   onToggleTone: () => void;
   onToggleAsMe: () => void;
+  onToggleInterviewCoach: () => void;
   onToggleWeb: () => void;
   /** voice typing: speak and the words land in the text box */
   dictating: boolean;
@@ -35,9 +37,11 @@ export default function Composer({
   onTextChange,
   humanTone,
   answerAsMe,
+  interviewCoach,
   webSearch,
   onToggleTone,
   onToggleAsMe,
+  onToggleInterviewCoach,
   onToggleWeb,
   dictating,
   dictText,
@@ -240,6 +244,13 @@ export default function Composer({
           title="Reply in the first person, as you, using About me"
           icon={<User size={14} />}
           onClick={onToggleAsMe}
+        />
+        <Chip
+          active={interviewCoach}
+          label="Interview coach"
+          title="Answer as Thanseem for entry-level IT support interviews"
+          icon={<Briefcase size={14} />}
+          onClick={onToggleInterviewCoach}
         />
         <Chip
           active={webSearch}

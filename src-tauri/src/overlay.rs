@@ -1,4 +1,4 @@
-//! The floating "Quick assistant" popup: a small always-on-top glass window.
+//! The floating "Quick Assistant" popup: an always-on-top glass window.
 //!
 //! Opening it minimizes the main window; the popup stays above every other
 //! application and answers come from the main window (which owns the settings,
@@ -34,9 +34,9 @@ pub async fn open_overlay(app: AppHandle) -> Result<(), String> {
     // from `on_page_load` - a transparent window whose WebView2 renderer has
     // not started yet is what used to render as a blank white panel.
     WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::App("index.html".into()))
-        .title("Berzh AI - quick assistant")
-        .inner_size(740.0, 640.0) // wide desk-panel, not a phone column
-        .min_inner_size(480.0, 400.0)
+        .title("Quick Assistant")
+        .inner_size(860.0, 640.0)
+        .min_inner_size(600.0, 400.0)
         .decorations(false)
         .shadow(false) // no square DWM outline around a rounded panel: it
         // drew visible lines at the four corners of the glass

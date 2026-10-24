@@ -685,6 +685,12 @@ export default function SettingsDialog({ settings, onSave, onClose, version, upd
                   title="Answer as me"
                   hint='Reply in the first person as you, using "About me" (for example "I am ... and I am a ...").'
                 />
+                <Toggle
+                  checked={draft.interviewCoach}
+                  onChange={(v) => set("interviewCoach", v)}
+                  title="Interview coach"
+                  hint="Shape answers as concise, natural spoken responses for Thanseem's entry-level IT Support and Service Desk interviews."
+                />
                 <Field label="About me">
                   <textarea
                     rows={4}

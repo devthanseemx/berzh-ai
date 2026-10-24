@@ -38,10 +38,12 @@ export default function OverlayWindow() {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [dictating, setDictating] = useState(false);
+  const [dictReady, setDictReady] = useState(false);
   const [note, setNote] = useState(""); // a small warning under the input
 
-  const dictCommit = useRef("");
+  const dictBase = useRef({ text: "", cursor: 0 });
   const dictManualEdit = useRef(false);
+  const conversationRef = useRef<Message[]>([]);
   const textRef = useRef("");
   const dictOn = useRef(false);
   const dictSession = useRef<VoiceSession | null>(null);
@@ -91,8 +93,8 @@ export default function OverlayWindow() {
     dictOn.current = false;
     dictSession.current = null;
     setDictating(false);
+    setDictReady(false);
     dictManualEdit.current = false;
-    dictCommit.current = textRef.current;
   };
 
   const ask = async () => {
@@ -118,15 +120,16 @@ export default function OverlayWindow() {
       { id: qid, role: "assistant", text: "", pending: true, status: "Preparing your answer..." },
     ]);
     updateText("");
-    dictCommit.current = "";
+    dictBase.current = { text: "", cursor: 0 };
     let raw = "";
     try {
-      const settings = await loadSettings();
+      const loadedSettings = await loadSettings();
+      const settings = { ...loadedSettings, interviewCoach: true };
       const route = decideRoute(
         q,
         null,
         settings.webSearch && !!settings.tavilyKey.trim(),
-        settings.answerAsMe,
+        false,
       );
       let web: Awaited<ReturnType<typeof searchWeb>> | null = null;
       let webFailed = false;
@@ -155,9 +158,10 @@ export default function OverlayWindow() {
         ),
       );
       const history: Message[] = [{ id: qid, role: "user", text: q }];
+      const contextualHistory = [...conversationRef.current, ...history];
       await streamChat(
         settings,
-        history,
+        contextualHistory,
         (token) => {
           raw += token;
           setMsgs((messages) =>
@@ -169,8 +173,13 @@ export default function OverlayWindow() {
           );
         },
         controller.signal,
-        { web: web?.context, webFailed, maxTurns: 1 },
+        { web: web?.context, webFailed, maxTurns: 12, quick: true },
       );
+      conversationRef.current = [
+        ...conversationRef.current,
+        { id: `u-${qid}`, role: "user" as const, text: q },
+        { id: qid, role: "assistant" as const, text: raw },
+      ].slice(-24);
       setMsgs((messages) =>
         messages.map((message) =>
           message.id === qid
@@ -214,6 +223,11 @@ export default function OverlayWindow() {
       return;
     }
 
+    const input = inputRef.current;
+    const currentText = textRef.current;
+    const selectionStart = input?.selectionStart ?? currentText.length;
+    const selectionEnd = input?.selectionEnd ?? selectionStart;
+
     setNote("");
     let settings;
     try {
@@ -228,51 +242,65 @@ export default function OverlayWindow() {
     }
 
     dictOn.current = true;
-    dictCommit.current = "";
     dictManualEdit.current = false;
+    setDictReady(false);
+    dictBase.current = {
+      text: currentText.slice(0, selectionStart) + currentText.slice(selectionEnd),
+      cursor: selectionStart,
+    };
+    updateText(dictBase.current.text);
     setDictating(true);
     try {
       const session = await startVoice(
         { apiKey: settings.deepgramKey, language: settings.voiceLang },
         {
-          onStatus: () => {},
+          onStatus: (status) => setDictReady(status === "listening"),
           onSpeech: () => {},
           onUtteranceStart: () => {
             dictManualEdit.current = false;
-            dictCommit.current = textRef.current;
+            dictBase.current = {
+              text: textRef.current,
+              cursor: inputRef.current?.selectionStart ?? textRef.current.length,
+            };
           },
           onTranscript: (transcript) => {
             if (dictOn.current && !dictManualEdit.current) {
-              updateText(dictCommit.current ? `${dictCommit.current} ${transcript}` : transcript);
+              const { text: base, cursor } = dictBase.current;
+              const next = base.slice(0, cursor) + transcript + base.slice(cursor);
+              updateText(next);
+              const nextCursor = cursor + transcript.length;
+              requestAnimationFrame(() => inputRef.current?.setSelectionRange(nextCursor, nextCursor));
             }
           },
           onUtteranceEnd: (transcript) => {
             if (!dictOn.current || dictManualEdit.current || !transcript) return;
-            dictCommit.current = dictCommit.current
-              ? `${dictCommit.current} ${transcript}`
-              : transcript;
-            updateText(dictCommit.current);
+            const { text: base, cursor } = dictBase.current;
+            const next = base.slice(0, cursor) + transcript + base.slice(cursor);
+            dictBase.current = { text: next, cursor: cursor + transcript.length };
+            updateText(next);
+            requestAnimationFrame(() =>
+              inputRef.current?.setSelectionRange(dictBase.current.cursor, dictBase.current.cursor),
+            );
           },
           onError: (message) => {
             if (!dictOn.current) return;
             dictOn.current = false;
             dictSession.current = null;
             setDictating(false);
+            setDictReady(false);
             setNote(message);
           },
         },
       );
       if (dictOn.current) {
         dictSession.current = session;
-        dictCommit.current = "";
-        dictManualEdit.current = false;
-        updateText("");
       }
       else void session.stop().catch((e) => console.error("Could not stop overlay dictation:", e));
     } catch (e) {
       if (!dictOn.current) return;
       dictOn.current = false;
       setDictating(false);
+      setDictReady(false);
       setNote(describeMicError(e));
     }
   };
@@ -285,40 +313,49 @@ export default function OverlayWindow() {
   };
 
   return (
-    <div className="h-screen flex flex-col rounded-2xl border border-white/15 bg-[#17181c]/75 backdrop-blur-2xl overflow-hidden box-border select-none [text-shadow:0_1px_2px_rgba(255,255,255,0.55)] dark:[text-shadow:0_1px_2px_rgba(0,0,0,0.6)]">
+    <div className="h-screen flex flex-col rounded-xl border border-white/15 bg-[#17181c]/90 backdrop-blur-2xl overflow-hidden box-border select-none">
         {/* title bar: drag the window by it, close with the cross */}
         <div
-          className="h-9 pl-4 pr-1.5 flex items-center justify-between shrink-0"
+          className="h-11 pl-4 pr-2 flex items-center justify-between shrink-0"
           data-tauri-drag-region
         >
           <span
-            className="text-xs font-semibold tracking-wide text-white/75"
+            className="text-sm font-semibold tracking-wide text-white/90"
             data-tauri-drag-region
           >
-            Berzh AI - quick assistant
+            Quick Assistant
           </span>
           <button
             onClick={close}
             title="Close"
             aria-label="Close quick assistant"
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-white/60 hover:text-white hover:bg-white/15"
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 text-white hover:bg-red-500/80 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-white"
           >
             <X size={16} />
           </button>
         </div>
 
         {/* input on top, with the voice icon for speech-to-text */}
-        <div className="px-3 pt-1 pb-2.5 shrink-0">
-          <div className="flex items-end gap-1.5 rounded-xl border border-white/15 bg-white/10 px-2.5 py-1.5">
+        <div className="px-4 pt-2 pb-3 shrink-0">
+          <div className="flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-2">
             <textarea
               ref={inputRef}
               rows={1}
               value={text}
-              placeholder="Ask anything..."
+              placeholder={
+                dictating
+                  ? dictReady
+                    ? "Listening..."
+                    : "Connecting microphone..."
+                  : "Ask an interview question..."
+              }
               onChange={(e) => {
                 updateText(e.target.value);
                 if (dictOn.current) {
-                  dictCommit.current = e.target.value;
+                  dictBase.current = {
+                    text: e.target.value,
+                    cursor: e.target.selectionStart,
+                  };
                   dictManualEdit.current = true;
                 }
               }}
@@ -328,27 +365,33 @@ export default function OverlayWindow() {
                   ask();
                 }
               }}
-              className="flex-1 resize-none select-text cursor-text bg-transparent text-sm leading-6 outline-none placeholder:text-muted"
+              className="min-h-9 flex-1 resize-none select-text cursor-text bg-transparent py-1 text-sm leading-6 text-white outline-none placeholder:text-white/50"
             />
             <button
               onClick={() => void toggleMic()}
               title={dictating ? "Stop voice typing" : "Voice typing"}
               aria-label={dictating ? "Stop voice typing" : "Voice typing"}
               aria-pressed={dictating}
-              className={`w-8 h-8 flex items-center justify-center rounded-lg shrink-0 ${
+              className={`h-9 w-9 flex items-center justify-center rounded-lg shrink-0 ${
                 dictating
-                  ? "bg-accent text-panel"
-                  : "text-muted hover:text-ink hover:bg-bg"
+                  ? "bg-red-500 text-white"
+                  : "bg-white/10 text-white/80 hover:bg-white/20 hover:text-white"
               }`}
             >
-              {dictating ? <Square size={13} className="fill-current" /> : <Mic size={16} />}
+              {dictating && !dictReady ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : dictating ? (
+                <Square size={13} className="fill-current" />
+              ) : (
+                <Mic size={16} />
+              )}
             </button>
             <button
               onClick={ask}
               disabled={!text.trim() || busy}
               title="Send"
               aria-label="Send"
-              className="w-8 h-8 flex items-center justify-center rounded-lg shrink-0 bg-accent text-panel disabled:opacity-30"
+              className="h-9 w-9 flex items-center justify-center rounded-lg shrink-0 bg-accent text-panel disabled:opacity-40"
             >
               {busy ? <Loader2 size={15} className="animate-spin" /> : <ArrowUp size={16} />}
             </button>
@@ -363,9 +406,8 @@ export default function OverlayWindow() {
           {msgs.length === 0 ? (
             <div className="h-full flex items-center justify-center text-center px-6">
               <p className="text-[13px] text-white/70 leading-5">
-                🤖 Idle. Bored. Judgment-free.
-                <br />
-                Ask me anything — or hit the mic and just talk.
+                <span className="block text-base font-semibold text-white/90">Interview practice, made simple.</span>
+                <span className="mt-1 block">Ask an interview question to practice your answer.</span>
               </p>
             </div>
           ) : (
@@ -373,7 +415,7 @@ export default function OverlayWindow() {
               {msgs.map((m) =>
                 m.role === "user" ? (
                   <div key={m.id} className="flex justify-end">
-                    <div className="max-w-[85%] rounded-xl rounded-tr-none bg-accent text-panel px-3 py-1.5 text-[13.5px] whitespace-pre-wrap break-words">
+                    <div className="max-w-[85%] rounded-lg rounded-tr-sm bg-accent text-panel px-3 py-2 text-[13.5px] whitespace-pre-wrap wrap-break-word">
                       {m.text}
                     </div>
                   </div>

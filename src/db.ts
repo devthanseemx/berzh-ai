@@ -301,6 +301,7 @@ export async function loadSettings(): Promise<Settings> {
     "liveDraft",
     "humanTone",
     "answerAsMe",
+    "interviewCoach",
     "webSearch",
     "omniAutoStart",
   ] as const;

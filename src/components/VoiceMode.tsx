@@ -1,4 +1,4 @@
-import { Globe, MicOff, Pause, Play, Smile, User } from "lucide-react";
+import { Briefcase, Globe, MicOff, Pause, Play, Smile, User } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Message, Preview } from "../types";
 import type { VoiceState } from "../voice";
@@ -21,9 +21,11 @@ interface Props {
   last: Message | null; // latest assistant message of the chat
   humanTone: boolean;
   answerAsMe: boolean;
+  interviewCoach: boolean;
   webSearch: boolean;
   onToggleTone: () => void;
   onToggleAsMe: () => void;
+  onToggleInterviewCoach: () => void;
   onToggleWeb: () => void;
   onStop: () => void;
   onRetry: () => void;
@@ -40,9 +42,11 @@ export default function VoiceMode({
   last,
   humanTone,
   answerAsMe,
+  interviewCoach,
   webSearch,
   onToggleTone,
   onToggleAsMe,
+  onToggleInterviewCoach,
   onToggleWeb,
   onStop,
   onRetry,
@@ -218,6 +222,13 @@ export default function VoiceMode({
           title="Reply in the first person, as you, using About me"
           icon={<User size={14} />}
           onClick={onToggleAsMe}
+        />
+        <Chip
+          active={interviewCoach}
+          label="Interview coach"
+          title="Answer as Thanseem for entry-level IT support interviews"
+          icon={<Briefcase size={14} />}
+          onClick={onToggleInterviewCoach}
         />
         <Chip
           active={webSearch}

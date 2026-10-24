@@ -178,16 +178,22 @@ export async function startVoice(
           ? new MediaRecorder(stream, { mimeType: mime })
           : new MediaRecorder(stream);
         recorder = rec;
+        let reportedListening = false;
         rec.ondataavailable = (e) => {
-          if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) ws.send(e.data);
+          if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+            ws.send(e.data);
+            if (!reportedListening) {
+              reportedListening = true;
+              h.onStatus("listening");
+            }
+          }
         };
         rec.onerror = () => {
           if (stopped) return;
           h.onError("The microphone could not record audio. Check microphone permissions and try again.");
           void shutdown();
         };
-        rec.start(250);
-        h.onStatus("listening");
+        rec.start(100);
 
         window.clearInterval(keepAlive);
         keepAlive = window.setInterval(() => {

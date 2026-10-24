@@ -1196,7 +1196,7 @@ export default function App() {
     refreshDraft(); // the preview may have been written in the old style
   };
 
-  const toggleSetting = (key: "humanTone" | "answerAsMe" | "webSearch") => {
+  const toggleSetting = (key: "humanTone" | "answerAsMe" | "interviewCoach" | "webSearch") => {
     const next = {
       ...settingsRef.current,
       [key]: !settingsRef.current[key],
@@ -1331,11 +1331,13 @@ export default function App() {
         preview={preview}
         humanTone={settings.humanTone}
         answerAsMe={settings.answerAsMe}
+        interviewCoach={settings.interviewCoach}
         webSearch={settings.webSearch}
         voice={voice}
         analyser={analyser}
         onToggleTone={() => toggleSetting("humanTone")}
         onToggleAsMe={() => toggleSetting("answerAsMe")}
+        onToggleInterviewCoach={() => toggleSetting("interviewCoach")}
         onToggleWeb={() => toggleSetting("webSearch")}
         dictating={dictating}
         dictText={dictText}            onToggleDictation={() => void toggleDictation()}

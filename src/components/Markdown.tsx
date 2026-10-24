@@ -66,15 +66,27 @@ function Mermaid({ code }: { code: string }) {
     (async () => {
       try {
         const { default: mermaid } = await import("mermaid");
+        const normalizedCode = code
+          .replace(/^\s*[\w.-]+\s+--\s+-{3,}\s*;?\s*$/gm, "")
+          .replace(
+            /(\b[\w.-]+)\{([^{}\n"]*\?[^{}\n"]*)\}/g,
+            '$1{"$2"}',
+          );
         mermaid.initialize({
           startOnLoad: false,
           theme: document.documentElement.classList.contains("dark")
             ? "dark"
             : "neutral",
           fontFamily: "Inter, system-ui, sans-serif",
+          suppressErrorRendering: true,
         });
+        const parsed = await mermaid.parse(normalizedCode, { suppressErrors: true });
+        if (!parsed) {
+          if (!dead) setFailed(true);
+          return;
+        }
         const id = `mmd-${Math.random().toString(36).slice(2, 9)}`;
-        const { svg } = await mermaid.render(id, code);
+        const { svg } = await mermaid.render(id, normalizedCode);
         if (!dead && ref.current) ref.current.innerHTML = svg;
       } catch {
         if (!dead) setFailed(true);
